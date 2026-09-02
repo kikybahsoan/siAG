@@ -1,0 +1,6 @@
+{
+  "name": "Supervisi Administrasi Guru",
+  "description": "Instrumen penilaian dan rekapitulasi supervisi administrasi pembelajaran guru oleh Kepala Sekolah",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
