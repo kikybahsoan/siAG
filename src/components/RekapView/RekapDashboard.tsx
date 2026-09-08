@@ -15,7 +15,8 @@ import {
   ChevronDown,
   UserCheck,
   Award,
-  AlertCircle
+  AlertCircle,
+  ExternalLink
 } from "lucide-react";
 
 interface RekapDashboardProps {
@@ -59,6 +60,7 @@ export const RekapDashboard: React.FC<RekapDashboardProps> = ({
         nip: rec.nip || "-",
         mapel: rec.mapel || "-",
         kelas: rec.kelas || "-",
+        driveUrl: rec.driveUrl || entry?.driveUrl || "",
         total,
         percentage,
         predikat: pred,
@@ -383,6 +385,9 @@ export const RekapDashboard: React.FC<RekapDashboardProps> = ({
                     {sortKey === "date" && (sortAsc ? <ChevronUp className="w-3 h-3 text-indigo-400" /> : <ChevronDown className="w-3 h-3 text-indigo-400" />)}
                   </div>
                 </th>
+                <th className="py-3.5 px-4 text-center w-28">
+                  <span>Soft Copy</span>
+                </th>
                 <th className="py-3.5 px-4 text-right w-36">
                   <span>Aksi</span>
                 </th>
@@ -391,7 +396,7 @@ export const RekapDashboard: React.FC<RekapDashboardProps> = ({
             <tbody className="divide-y divide-neutral-800/60">
               {processedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-16 text-center text-xs text-neutral-500">
+                  <td colSpan={9} className="py-16 text-center text-xs text-neutral-500">
                     Tidak ada data guru yang memenuhi filter.
                   </td>
                 </tr>
@@ -462,6 +467,30 @@ export const RekapDashboard: React.FC<RekapDashboardProps> = ({
                         {row.updatedAt
                           ? new Date(row.updatedAt).toLocaleDateString("id-ID")
                           : "-"}
+                      </td>
+
+                      <td className="py-3 px-4 text-center">
+                        {row.driveUrl ? (
+                          <a
+                            href={/^https?:\/\//i.test(row.driveUrl.trim()) ? row.driveUrl.trim() : `https://${row.driveUrl.trim()}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 transition-all shadow-sm group-hover:border-emerald-500/50"
+                            title={`Buka Soft Copy Google Drive ${row.name}`}
+                          >
+                            <ExternalLink className="w-3 h-3 text-emerald-400" />
+                            <span>Drive</span>
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onSelectTeacherForEdit(row.name)}
+                            className="text-neutral-600 hover:text-neutral-400 text-[11px] hover:underline font-mono"
+                            title="Klik untuk mengisi tautan Drive guru ini"
+                          >
+                            –
+                          </button>
+                        )}
                       </td>
 
                       <td className="py-3 px-4 text-right">

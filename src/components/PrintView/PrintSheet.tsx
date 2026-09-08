@@ -6,7 +6,7 @@ import {
   calculateScoreSummary, 
   SCORE_RUBRIC_DESCRIPTIONS 
 } from "../../data/supervisionData";
-import { Printer, ArrowLeft, Building2 } from "lucide-react";
+import { Printer, ArrowLeft, Building2, ExternalLink } from "lucide-react";
 
 interface PrintSheetProps {
   record: SupervisionRecord;
@@ -68,6 +68,19 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
               ))}
             </select>
           </div>
+
+          {record.driveUrl && (
+            <a
+              href={/^https?:\/\//i.test(record.driveUrl.trim()) ? record.driveUrl.trim() : `https://${record.driveUrl.trim()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold rounded-xl transition-colors shadow-sm"
+              title="Buka soft copy Google Drive di tab baru"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Buka Soft Copy (Drive)</span>
+            </a>
+          )}
         </div>
 
         <button
@@ -154,6 +167,21 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
           <div className="flex">
             <span className="w-36 text-neutral-600">Tanggal Supervisi</span>
             <span>: {formattedDate}</span>
+          </div>
+          <div className="flex col-span-2 pt-1 border-t border-neutral-200 print:border-neutral-300">
+            <span className="w-36 text-neutral-600 flex-shrink-0">Soft Copy (Drive)</span>
+            <span className="truncate max-w-[620px] text-blue-800 print:text-black font-mono text-[11px]">
+              : {record.driveUrl ? (
+                <a
+                  href={/^https?:\/\//i.test(record.driveUrl.trim()) ? record.driveUrl.trim() : `https://${record.driveUrl.trim()}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline text-blue-700 print:text-black"
+                >
+                  {record.driveUrl}
+                </a>
+              ) : "-"}
+            </span>
           </div>
         </div>
 

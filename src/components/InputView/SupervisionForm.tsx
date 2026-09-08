@@ -21,8 +21,19 @@ import {
   Clock,
   User,
   BookOpen,
-  Award
+  Award,
+  ExternalLink,
+  FolderOpen,
+  Link as LinkIcon
 } from "lucide-react";
+
+const formatExternalUrl = (url?: string): string => {
+  if (!url) return "";
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+};
 
 interface SupervisionFormProps {
   record: SupervisionRecord;
@@ -138,6 +149,18 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
               <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/20">
                 Instrumen Administrasi
               </span>
+              {record.driveUrl && (
+                <a
+                  href={formatExternalUrl(record.driveUrl)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 transition-colors shadow-sm"
+                  title="Klik untuk membuka soft copy Google Drive guru di tab baru"
+                >
+                  <ExternalLink className="w-3 h-3 text-emerald-400" />
+                  <span>Buka Soft Copy (Drive)</span>
+                </a>
+              )}
               {record.updatedAt && (
                 <span className="text-[11px] text-neutral-500 flex items-center gap-1 font-mono">
                   <Clock className="w-3 h-3 text-neutral-500" />
@@ -286,6 +309,61 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
                 placeholder="Contoh: 19850101 201001 1 005"
                 className="w-full bg-neutral-900 border border-neutral-700/80 rounded-xl px-3 py-2 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
               />
+            </div>
+
+            {/* Link Google Drive Soft Copy Perangkat Pembelajaran */}
+            <div className="col-span-1 sm:col-span-2 lg:col-span-3 pt-2.5 mt-1 border-t border-neutral-800/80">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 mb-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-neutral-300 flex items-center gap-1.5">
+                  <FolderOpen className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Link Google Drive (Soft Copy Perangkat Pembelajaran)</span>
+                </label>
+                {record.driveUrl && (
+                  <span className="text-[10.5px] text-emerald-400 font-semibold flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    <span>Tautan soft copy siap ditinjau</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <LinkIcon className="w-3.5 h-3.5 text-neutral-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="url"
+                    value={record.driveUrl || ""}
+                    onChange={(e) => handleFieldChange("driveUrl", e.target.value)}
+                    placeholder="https://drive.google.com/drive/folders/... atau link file RPP/Modul Ajar"
+                    className="w-full bg-neutral-900 border border-neutral-700/80 rounded-xl pl-9 pr-3 py-2.5 text-xs text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-indigo-500 transition-colors font-mono"
+                  />
+                </div>
+
+                {record.driveUrl ? (
+                  <a
+                    href={formatExternalUrl(record.driveUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/25 transition-all flex-shrink-0"
+                    title="Buka folder/file Google Drive di tab browser baru"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Buka Soft Copy</span>
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 bg-neutral-900 text-neutral-500 rounded-xl text-xs font-medium cursor-not-allowed flex-shrink-0 border border-neutral-800"
+                    title="Masukkan link Google Drive untuk mengaktifkan tombol ini"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Buka Soft Copy</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-neutral-500 mt-1.5 leading-relaxed">
+                Tautan folder atau berkas soft copy perangkat pembelajaran guru (Modul Ajar/RPP, Prota, Promes, Alur Tujuan Pembelajaran, LKPD, Instrumen Penilaian) untuk memudahkan verifikasi dokumen oleh supervisor.
+              </p>
             </div>
           </div>
         </div>

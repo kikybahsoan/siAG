@@ -20,6 +20,7 @@ export interface SupervisionRecord {
   jtm: string;
   tugasTambahan: string;
   sertifikasi: string;
+  driveUrl?: string;
   scores: Record<number, ScoreValue>;
   catatan: string;
   tindakLanjut: string;
@@ -45,6 +46,7 @@ export interface TeacherIndexItem {
   name: string;
   nip?: string;
   mapel: string;
+  driveUrl?: string;
   total: number | null;
   count: number;
   percentage: number | null;

@@ -124,16 +124,17 @@ export function saveTeacherRecord(record: SupervisionRecord): SupervisionIndex {
     const summary = calculateScoreSummary(updatedRecord);
     const index = getSupervisionIndex();
 
-    if (summary.count > 0) {
+    if (summary.count > 0 || updatedRecord.driveUrl) {
       index[slug] = {
         name: upperName,
         nip: updatedRecord.nip || "",
         mapel: updatedRecord.mapel || "",
-        total: summary.total,
+        driveUrl: updatedRecord.driveUrl || "",
+        total: summary.count > 0 ? summary.total : null,
         count: summary.count,
-        percentage: summary.percentage,
-        predikatCls: summary.predikat.cls,
-        predikatLabel: summary.predikat.label,
+        percentage: summary.count > 0 ? summary.percentage : null,
+        predikatCls: summary.count > 0 ? summary.predikat.cls : "z",
+        predikatLabel: summary.count > 0 ? summary.predikat.label : "Belum Disupervisi",
         updatedAt: now
       };
     } else {

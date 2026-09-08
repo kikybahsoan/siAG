@@ -409,7 +409,7 @@ function updateRekapSheet(ss, payload) {
 
   // Header Tabel
   var headers = [
-    "No", "Nama Guru", "NIP", "Mata Pelajaran", "Kelas", "JTM", "Tugas Tambahan",
+    "No", "Nama Guru", "NIP", "Mata Pelajaran", "Kelas", "JTM", "Tugas Tambahan", "Link Soft Copy Drive",
     "Total Skor", "Skor Maks", "Persentase (%)", "Predikat", "Status", "Supervisor", "Tanggal", "Catatan", "Tindak Lanjut"
   ];
 
@@ -444,6 +444,7 @@ function updateRekapSheet(ss, payload) {
       rec.kelas || "",
       rec.jtm || "",
       rec.tugasTambahan || "",
+      rec.driveUrl || entry.driveUrl || "",
       total,
       76,
       pct,

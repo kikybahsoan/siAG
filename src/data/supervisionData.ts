@@ -407,6 +407,7 @@ export function createBlankRecord(name: string, defaultSupervisor = "", defaultN
     jtm: "",
     tugasTambahan: "",
     sertifikasi: "",
+    driveUrl: "",
     scores,
     catatan: "",
     tindakLanjut: "",

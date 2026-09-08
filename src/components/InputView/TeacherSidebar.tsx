@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { SupervisionIndex } from "../../types";
 import { slugifyTeacher } from "../../data/supervisionData";
-import { Search, UserCheck, UserX, UserPlus, Users, X } from "lucide-react";
+import { Search, UserCheck, UserX, UserPlus, Users, X, FolderCheck } from "lucide-react";
 
 interface TeacherSidebarProps {
   teachers: string[];
@@ -210,11 +210,22 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
                     <div className={`truncate leading-snug uppercase ${isActive ? "font-bold text-white" : "font-medium text-neutral-200"}`}>
                       {teacher.toUpperCase()}
                     </div>
-                    {entry && entry.mapel && (
-                      <div className="truncate text-[10px] mt-0.5 text-neutral-400">
-                        {entry.mapel}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      {entry && entry.mapel && (
+                        <div className="truncate text-[10px] text-neutral-400">
+                          {entry.mapel}
+                        </div>
+                      )}
+                      {entry?.driveUrl && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-emerald-400 bg-emerald-500/10 px-1 py-0.5 rounded border border-emerald-500/20 flex-shrink-0"
+                          title="Tersedia link soft copy Google Drive"
+                        >
+                          <FolderCheck className="w-2.5 h-2.5 text-emerald-400" />
+                          <span>Drive</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
