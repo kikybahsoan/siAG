@@ -16,7 +16,8 @@ export const DEFAULT_SCHOOL_META: SchoolMeta = {
   tahun: "2026/2027",
   kota: "Gorontalo",
   kepalaSekolah: "",
-  nipKepalaSekolah: ""
+  nipKepalaSekolah: "",
+  logoUrl: "/logo new.jpg"
 };
 
 export function getSchoolMeta(): SchoolMeta {

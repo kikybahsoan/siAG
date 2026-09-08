@@ -38,6 +38,7 @@ export interface SchoolMeta {
   kota: string;
   kepalaSekolah: string;
   nipKepalaSekolah: string;
+  logoUrl?: string;
 }
 
 export interface TeacherIndexItem {

@@ -89,12 +89,12 @@ export default function App() {
     setIsInitialized(true);
   }, []);
 
-  // Automatic background synchronization every 1 hour (3,600,000 ms)
-  // Dilakukan berkala setiap 1 jam agar tidak mengganggu proses pengisian data yang sedang berlangsung
+  // Automatic background synchronization every 10 minutes (600,000 ms)
+  // Dilakukan berkala setiap 10 menit agar tidak mengganggu proses pengisian data yang sedang berlangsung
   useEffect(() => {
     if (!isInitialized) return;
 
-    const ONE_HOUR_MS = 60 * 60 * 1000; // 1 Jam
+    const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 Menit
 
     const intervalId = setInterval(async () => {
       // Don't poll if document is hidden or offline
@@ -122,9 +122,9 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.warn("1 hour periodic auto-sync error:", err);
+        console.warn("10 minutes periodic auto-sync notice:", err);
       }
-    }, ONE_HOUR_MS);
+    }, TEN_MINUTES_MS);
 
     return () => clearInterval(intervalId);
   }, [isInitialized, activeTeacher, activeTab]);

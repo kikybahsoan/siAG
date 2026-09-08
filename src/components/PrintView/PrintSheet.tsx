@@ -81,19 +81,33 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
 
       {/* Formal Printable Document Canvas */}
       <div className="bg-white border border-[#DCD5C2] print:border-none shadow-md print:shadow-none p-6 sm:p-10 max-w-[860px] mx-auto text-black font-serif leading-normal">
-        {/* Kop Surat Sekolah */}
-        <div className="text-center pb-3 border-b-2 border-black space-y-1">
-          <h2 className="text-sm font-sans font-bold uppercase tracking-wider text-neutral-800">
-            Pemerintah Daerah Provinsi / Dinas Pendidikan
-          </h2>
-          <h1 className="text-lg sm:text-xl font-bold uppercase tracking-tight text-black">
-            {schoolMeta.sekolah || "Satuan Pendidikan Menengah"}
-          </h1>
-          <p className="text-xs font-sans text-neutral-600">
-            {schoolMeta.alamat ? `${schoolMeta.alamat} - ` : ""}
-            {schoolMeta.kota || "Indonesia"}
-            {schoolMeta.npsn ? ` &middot; NPSN: ${schoolMeta.npsn}` : ""}
-          </p>
+        {/* Kop Surat Sekolah dengan Logo Resmi */}
+        <div className="flex items-center gap-4 sm:gap-6 pb-3 border-b-2 border-black">
+          <img
+            src={schoolMeta.logoUrl || "/logo new.jpg"}
+            alt="Logo SMKN 2 Gorontalo"
+            className="w-20 h-20 sm:w-24 sm:h-24 object-contain flex-shrink-0"
+            onError={(e) => {
+              const target = e.currentTarget;
+              if (!target.src.endsWith("/logo-new.jpg")) {
+                target.src = "/logo-new.jpg";
+              }
+            }}
+          />
+          <div className="text-center flex-1 space-y-1">
+            <h2 className="text-xs sm:text-sm font-sans font-bold uppercase tracking-wider text-neutral-800">
+              Pemerintah Daerah Provinsi / Dinas Pendidikan
+            </h2>
+            <h1 className="text-lg sm:text-xl font-bold uppercase tracking-tight text-black">
+              {schoolMeta.sekolah || "SMKN 2 Gorontalo"}
+            </h1>
+            <p className="text-xs font-sans text-neutral-600">
+              {schoolMeta.alamat ? `${schoolMeta.alamat} - ` : ""}
+              {schoolMeta.kota || "Gorontalo"}
+              {schoolMeta.npsn ? ` &middot; NPSN: ${schoolMeta.npsn}` : ""}
+            </p>
+          </div>
+          <div className="w-20 sm:w-24 hidden sm:block flex-shrink-0" aria-hidden="true" />
         </div>
         <div className="border-b border-black mt-0.5 mb-5" />
 

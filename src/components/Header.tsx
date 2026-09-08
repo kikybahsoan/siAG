@@ -13,7 +13,10 @@ import {
   Sparkles,
   Database,
   Cloud,
-  Lock
+  Lock,
+  Image as ImageIcon,
+  Upload,
+  RotateCcw
 } from "lucide-react";
 
 interface HeaderProps {
@@ -59,8 +62,18 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Top Header info */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-5 border-b border-neutral-800/80">
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 bg-indigo-600 rounded-2xl flex items-center justify-center font-bold text-lg text-white shadow-lg shadow-indigo-600/30 flex-shrink-0">
-              <GraduationCap className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-neutral-950 border border-neutral-700/80 p-1 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
+              <img
+                src={schoolMeta.logoUrl || "/logo new.jpg"}
+                alt="Logo SMKN 2 Gorontalo"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.src.endsWith("/logo-new.jpg")) {
+                    target.src = "/logo-new.jpg";
+                  }
+                }}
+              />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -73,7 +86,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Supervisi Administrasi Guru
               </h1>
               <p className="text-xs text-neutral-400 mt-0.5 font-normal">
-                Platform Evaluasi & Verifikasi Bukti Fisik Perangkat Pembelajaran
+                Platform Evaluasi & Verifikasi Bukti Fisik &middot; {schoolMeta.sekolah || "SMKN 2 Gorontalo"}
               </p>
             </div>
           </div>
@@ -224,6 +237,67 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Logo Settings Row */}
+            {isEditingMeta && (
+              <div className="col-span-1 sm:col-span-2 lg:col-span-4 mt-2 pt-3 border-t border-neutral-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-neutral-900/60 p-3 rounded-xl">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-neutral-950 border border-neutral-700 p-1 flex items-center justify-center flex-shrink-0">
+                    <img
+                      src={schoolMeta.logoUrl || "/logo new.jpg"}
+                      alt="Logo Preview"
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (!target.src.endsWith("/logo-new.jpg")) {
+                          target.src = "/logo-new.jpg";
+                        }
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-neutral-200 block">
+                      Logo Satuan Pendidikan (logo new.jpg)
+                    </span>
+                    <span className="text-[11px] text-neutral-400">
+                      Logo resmi SMKN 2 Gorontalo ditampilkan di Kop Surat lembar instrumen &amp; header
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition-colors">
+                    <Upload className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Unggah File Logo</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                          if (typeof reader.result === "string") {
+                            handleFieldChange("logoUrl", reader.result);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleFieldChange("logoUrl", "/logo new.jpg")}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
+                    title="Gunakan file bawaan /logo new.jpg"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset Default</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
