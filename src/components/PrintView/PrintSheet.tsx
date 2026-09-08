@@ -1,5 +1,6 @@
 import React from "react";
 import { SchoolMeta, SupervisionRecord } from "../../types";
+import { resolveAssetUrl } from "../../utils/assetUtils";
 import { 
   SECTIONS, 
   SKOR_MAKS, 
@@ -97,13 +98,14 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
         {/* Kop Surat Sekolah dengan Logo Resmi */}
         <div className="flex items-center gap-4 sm:gap-6 pb-3 border-b-2 border-black">
           <img
-            src={schoolMeta.logoUrl || "/logo new.jpg"}
+            src={resolveAssetUrl(schoolMeta.logoUrl || "logo new.jpg")}
             alt="Logo SMKN 2 Gorontalo"
             className="w-20 h-20 sm:w-24 sm:h-24 object-contain flex-shrink-0"
             onError={(e) => {
               const target = e.currentTarget;
-              if (!target.src.endsWith("/logo-new.jpg")) {
-                target.src = "/logo-new.jpg";
+              const fallback = resolveAssetUrl("logo-new.jpg");
+              if (target.src !== fallback) {
+                target.src = fallback;
               }
             }}
           />

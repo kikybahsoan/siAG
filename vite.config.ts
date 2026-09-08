@@ -62,8 +62,9 @@ function syncProxyPlugin(): Plugin {
 }
 
 export default defineConfig(() => {
+  const base = process.env.BASE_URL || (process.env.GITHUB_REPOSITORY ? `/${process.env.GITHUB_REPOSITORY.split('/')[1]}/` : './');
   return {
-    base: './',
+    base,
     plugins: [react(), tailwindcss(), syncProxyPlugin()],
     resolve: {
       alias: {

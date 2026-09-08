@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ActiveTab, SchoolMeta } from "../types";
+import { resolveAssetUrl } from "../utils/assetUtils";
 import { 
   Building2, 
   Calendar, 
@@ -64,13 +65,14 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3.5">
             <div className="w-12 h-12 rounded-2xl bg-neutral-950 border border-neutral-700/80 p-1 flex items-center justify-center overflow-hidden flex-shrink-0 shadow-md">
               <img
-                src={schoolMeta.logoUrl || "/logo new.jpg"}
+                src={resolveAssetUrl(schoolMeta.logoUrl || "logo new.jpg")}
                 alt="Logo SMKN 2 Gorontalo"
                 className="w-full h-full object-contain"
                 onError={(e) => {
                   const target = e.currentTarget;
-                  if (!target.src.endsWith("/logo-new.jpg")) {
-                    target.src = "/logo-new.jpg";
+                  const fallback = resolveAssetUrl("logo-new.jpg");
+                  if (target.src !== fallback) {
+                    target.src = fallback;
                   }
                 }}
               />
@@ -244,13 +246,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-neutral-950 border border-neutral-700 p-1 flex items-center justify-center flex-shrink-0">
                     <img
-                      src={schoolMeta.logoUrl || "/logo new.jpg"}
+                      src={resolveAssetUrl(schoolMeta.logoUrl || "logo new.jpg")}
                       alt="Logo Preview"
                       className="w-full h-full object-contain"
                       onError={(e) => {
                         const target = e.currentTarget;
-                        if (!target.src.endsWith("/logo-new.jpg")) {
-                          target.src = "/logo-new.jpg";
+                        const fallback = resolveAssetUrl("logo-new.jpg");
+                        if (target.src !== fallback) {
+                          target.src = fallback;
                         }
                       }}
                     />
