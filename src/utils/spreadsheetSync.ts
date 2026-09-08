@@ -123,6 +123,50 @@ export function applySyncPayload(payload: SyncPayload): void {
 }
 
 /**
+ * Unified resilient request helper to communicate with Google Apps Script Web App
+ * - First attempts proxy via local Vite dev server /api/sync-proxy (zero CORS restrictions)
+ * - Falls back to direct browser fetch with credentials: "omit" and redirect: "follow"
+ */
+async function requestGoogleScript(
+  targetUrl: string,
+  options: { method: "GET" | "POST"; body?: string }
+): Promise<any> {
+  // 1. Try local dev-server proxy if reachable (avoids any browser iframe/CORS issues)
+  try {
+    const proxyUrl = `/api/sync-proxy?url=${encodeURIComponent(targetUrl)}`;
+    const proxyResp = await fetch(proxyUrl, {
+      method: options.method,
+      headers: options.method === "POST" ? { "Content-Type": "text/plain;charset=utf-8" } : undefined,
+      body: options.body,
+    });
+    if (proxyResp.ok) {
+      const data = await proxyResp.json();
+      return data;
+    }
+  } catch (_proxyErr) {
+    // Proxy not available (e.g., static deployment or offline), fallback to direct fetch
+  }
+
+  // 2. Direct fetch with credentials: "omit" so browser doesn't send Google cookies,
+  // allowing Access-Control-Allow-Origin: * to be accepted by the browser
+  const directResp = await fetch(targetUrl, {
+    method: options.method,
+    headers: options.method === "POST" ? { "Content-Type": "text/plain;charset=utf-8" } : undefined,
+    body: options.body,
+    mode: "cors",
+    credentials: "omit",
+    redirect: "follow",
+    cache: "no-store",
+  });
+
+  if (!directResp.ok) {
+    throw new Error(`HTTP error ${directResp.status}`);
+  }
+
+  return await directResp.json();
+}
+
+/**
  * Test connectivity with Google Apps Script Web App
  */
 export async function testSpreadsheetConnection(webAppUrl: string): Promise<{ success: boolean; message: string; spreadsheetUrl?: string }> {
@@ -136,16 +180,8 @@ export async function testSpreadsheetConnection(webAppUrl: string): Promise<{ su
       ? `${cleanUrl}&action=ping&t=${Date.now()}`
       : `${cleanUrl}?action=ping&t=${Date.now()}`;
 
-    const response = await fetch(pingUrl, {
-      method: "GET",
-      mode: "cors"
-    });
+    const data = await requestGoogleScript(pingUrl, { method: "GET" });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
-    }
-
-    const data = await response.json();
     if (data.status === "ok" || data.status === "success") {
       if (data.spreadsheetUrl) {
         saveSyncConfig({ spreadsheetUrl: data.spreadsheetUrl });
@@ -159,7 +195,7 @@ export async function testSpreadsheetConnection(webAppUrl: string): Promise<{ su
 
     return { success: false, message: data.message || "Respon dari Spreadsheet tidak sesuai." };
   } catch (err: any) {
-    console.error("Test connection failed", err);
+    console.warn("Test connection warning:", err?.message || err);
     return { 
       success: false, 
       message: `Gagal terhubung: ${err.message || "Pastikan Web App disetel akses 'Siapa Saja (Anyone)'."}` 
@@ -183,16 +219,11 @@ export async function pushToSpreadsheet(webAppUrl?: string): Promise<{ success: 
       payload
     });
 
-    // We use text/plain to prevent CORS preflight blocking in Google Apps Script
-    const response = await fetch(url, {
+    const result = await requestGoogleScript(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
       body: bodyData
     });
 
-    const result = await response.json();
     if (result.status === "success" || result.status === "ok") {
       const now = new Date().toISOString();
       saveSyncConfig({ 
@@ -210,7 +241,7 @@ export async function pushToSpreadsheet(webAppUrl?: string): Promise<{ success: 
       message: result.message || "Gagal menyimpan ke Google Spreadsheet." 
     };
   } catch (err: any) {
-    console.error("Push to spreadsheet failed", err);
+    console.warn("Push to spreadsheet warning:", err?.message || err);
     return { 
       success: false, 
       message: `Gagal mengirim data: ${err.message || "Periksa koneksi internet dan izin Web App."}` 
@@ -232,16 +263,7 @@ export async function pullFromSpreadsheet(webAppUrl?: string): Promise<{ success
       ? `${url}&action=pull&t=${Date.now()}`
       : `${url}?action=pull&t=${Date.now()}`;
 
-    const response = await fetch(fetchUrl, {
-      method: "GET",
-      mode: "cors"
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
-    }
-
-    const result = await response.json();
+    const result = await requestGoogleScript(fetchUrl, { method: "GET" });
 
     if (result.status === "success" && result.payload) {
       applySyncPayload(result.payload);
@@ -264,7 +286,7 @@ export async function pullFromSpreadsheet(webAppUrl?: string): Promise<{ success
       message: result.message || "Gagal menarik data dari Google Spreadsheet." 
     };
   } catch (err: any) {
-    console.error("Pull from spreadsheet failed", err);
+    console.warn("Pull from spreadsheet notice:", err?.message || err);
     return { 
       success: false, 
       message: `Gagal menarik data: ${err.message || "Periksa koneksi internet atau izin Web App."}` 

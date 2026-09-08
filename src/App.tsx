@@ -81,15 +81,20 @@ export default function App() {
             setCurrentRecord(getTeacherRecord(firstTeacher, freshMeta));
           }
         }
+      }).catch((err) => {
+        console.warn("Initial sync notice:", err?.message || err);
       });
     }
 
     setIsInitialized(true);
   }, []);
 
-  // Automatic background synchronization every 15 seconds
+  // Automatic background synchronization every 1 hour (3,600,000 ms)
+  // Dilakukan berkala setiap 1 jam agar tidak mengganggu proses pengisian data yang sedang berlangsung
   useEffect(() => {
     if (!isInitialized) return;
+
+    const ONE_HOUR_MS = 60 * 60 * 1000; // 1 Jam
 
     const intervalId = setInterval(async () => {
       // Don't poll if document is hidden or offline
@@ -109,23 +114,20 @@ export default function App() {
           setTeachers(freshTeachers);
           setIndex(freshIndex);
 
-          // Update active teacher record if user is not actively typing
-          const isTyping =
-            document.activeElement?.tagName === "INPUT" ||
-            document.activeElement?.tagName === "TEXTAREA";
-
-          if (!isTyping && activeTeacher) {
+          // PENTING: Jangan pernah menimpa form jika user sedang berada di tab input formulir
+          // agar data penilaian yang sedang diklik/diisi tidak ter-reset secara tiba-tiba!
+          if (activeTab !== "input" && activeTeacher) {
             const freshRecord = getTeacherRecord(activeTeacher, freshMeta);
             setCurrentRecord(freshRecord);
           }
         }
       } catch (err) {
-        console.warn("15s periodic auto-sync error:", err);
+        console.warn("1 hour periodic auto-sync error:", err);
       }
-    }, 15000); // 15 seconds interval
+    }, ONE_HOUR_MS);
 
     return () => clearInterval(intervalId);
-  }, [isInitialized, activeTeacher]);
+  }, [isInitialized, activeTeacher, activeTab]);
 
   // When active teacher changes, load teacher record (uppercase guaranteed)
   const handleSelectTeacher = (name: string) => {

@@ -350,15 +350,15 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
 
               {/* Auto Sync Toggle */}
               <div className="p-3.5 bg-neutral-950/60 rounded-2xl border border-neutral-800 flex items-center justify-between gap-3">
-                <div>
+                 <div>
                   <div className="font-semibold text-neutral-200 flex items-center gap-2">
-                    <span>Otomatis Sinkron Setiap 15 Detik (Auto-Sync)</span>
+                    <span>Otomatis Sinkron Setiap 1 Jam (Auto-Sync)</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      Aktif 15 Detik
+                      Interval 1 Jam
                     </span>
                   </div>
                   <div className="text-[11px] text-neutral-400 mt-0.5">
-                    Aplikasi otomatis menyinkronkan dan menarik data terbaru ke Google Spreadsheet setiap 15 detik secara berkala di latar belakang, serta saat menyimpan nilai.
+                    Aplikasi menyinkronkan data di latar belakang setiap 1 jam secara berkala serta saat Anda menekan tombol "Simpan Penilaian", sehingga proses pengisian instrumen tidak akan terganggu.
                   </div>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
@@ -379,7 +379,7 @@ export const SpreadsheetSyncModal: React.FC<SpreadsheetSyncModalProps> = ({
                   <Laptop className="w-4 h-4 text-emerald-400" />
                 </div>
                 <p>
-                  <strong>Sinkronisasi Otomatis 15 Detik Aktif:</strong> URL Google Apps Script Anda telah disematkan secara default. Buka aplikasi ini dari HP, Laptop, atau Tablet mana pun; data akan tersinkronisasi otomatis setiap 15 detik tanpa perlu pengaturan ulang!
+                  <strong>Sinkronisasi Otomatis 1 Jam Aktif:</strong> URL Google Apps Script Anda telah disematkan secara default. Data tersinkronkan otomatis setiap 1 jam dan saat menekan "Simpan Penilaian" tanpa risiko form ter-reset saat sedang diisi.
                 </p>
               </div>
             </div>
