@@ -59,11 +59,11 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
             <select
               value={record.name}
               onChange={(e) => onSelectTeacher(e.target.value)}
-              className="bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-100 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer font-medium"
+              className="bg-neutral-950 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-neutral-100 focus:outline-none focus:border-indigo-500 transition-all cursor-pointer font-medium uppercase"
             >
               {teachers.map((t) => (
-                <option key={t} value={t} className="bg-neutral-900 text-neutral-100">
-                  {t}
+                <option key={t} value={t} className="bg-neutral-900 text-neutral-100 uppercase">
+                  {t.toUpperCase()}
                 </option>
               ))}
             </select>
@@ -111,7 +111,7 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
         <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-xs font-sans mb-6 bg-neutral-50 print:bg-transparent p-3 print:p-0 rounded border print:border-none border-neutral-200">
           <div className="flex">
             <span className="w-36 text-neutral-600">Nama Guru</span>
-            <span className="font-semibold text-black">: {record.name}</span>
+            <span className="font-semibold text-black uppercase">: {record.name.toUpperCase()}</span>
           </div>
           <div className="flex">
             <span className="w-36 text-neutral-600">Mata Pelajaran</span>
@@ -271,7 +271,7 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
             <div className="h-16 flex items-center justify-center">
               {/* Signature space */}
             </div>
-            <p className="font-bold underline text-black">{record.name}</p>
+            <p className="font-bold underline text-black uppercase">{record.name.toUpperCase()}</p>
             <p className="text-neutral-600 text-[11px]">NIP. {record.nip || "......................................."}</p>
           </div>
 
@@ -290,6 +290,12 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
               NIP. {record.nipSupervisor || schoolMeta.nipKepalaSekolah || "......................................."}
             </p>
           </div>
+        </div>
+
+        {/* Small Watermark */}
+        <div className="mt-6 pt-2 border-t border-neutral-200 flex items-center justify-between text-[9px] text-neutral-400 font-mono">
+          <span>Aplikasi Supervisi Administrasi Guru</span>
+          <span>kikybahsoan - smkn2gorontalo</span>
         </div>
       </div>
     </div>

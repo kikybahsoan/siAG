@@ -407,7 +407,7 @@ export const RekapDashboard: React.FC<RekapDashboardProps> = ({
                       </td>
 
                       <td className="py-3 px-4">
-                        <div className="font-bold text-neutral-100 group-hover:text-indigo-300 transition-colors">{row.name}</div>
+                        <div className="font-bold text-neutral-100 group-hover:text-indigo-300 transition-colors uppercase">{row.name.toUpperCase()}</div>
                         {row.nip && row.nip !== "-" && (
                           <div className="text-[10px] text-neutral-500 font-mono">
                             NIP: {row.nip}

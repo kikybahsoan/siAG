@@ -11,7 +11,9 @@ import {
   CheckCircle2,
   GraduationCap,
   Sparkles,
-  Database
+  Database,
+  Cloud,
+  Lock
 } from "lucide-react";
 
 interface HeaderProps {
@@ -20,6 +22,8 @@ interface HeaderProps {
   schoolMeta: SchoolMeta;
   onUpdateSchoolMeta: (meta: SchoolMeta) => void;
   onOpenBackupModal: () => void;
+  onOpenSyncModal: () => void;
+  isSyncConnected?: boolean;
   totalTeachers: number;
   completedCount: number;
 }
@@ -30,6 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   schoolMeta,
   onUpdateSchoolMeta,
   onOpenBackupModal,
+  onOpenSyncModal,
+  isSyncConnected = false,
   totalTeachers,
   completedCount
 }) => {
@@ -98,14 +104,33 @@ export const Header: React.FC<HeaderProps> = ({
               <span>{isEditingMeta ? "Tutup Info" : "Info Sekolah"}</span>
             </button>
 
-            {/* Backup & Restore Button */}
+            {/* Cloud Spreadsheet Sync Button (Locked with password) */}
+            <button
+              onClick={onOpenSyncModal}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                isSyncConnected
+                  ? "bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border-emerald-500/40 shadow-sm shadow-emerald-950"
+                  : "bg-neutral-800 hover:bg-neutral-700/80 text-neutral-300 border-neutral-700/80"
+              }`}
+              title="Sinkronisasi Cloud Database Spreadsheet (Terkunci Password Admin)"
+            >
+              <Cloud className={`w-3.5 h-3.5 ${isSyncConnected ? "text-emerald-400" : "text-neutral-400"}`} />
+              <span>Sinkron Spreadsheet</span>
+              {isSyncConnected && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+              <Lock className="w-2.5 h-2.5 text-neutral-400 ml-0.5 opacity-70" />
+            </button>
+
+            {/* Backup & Restore Button (Locked with password) */}
             <button
               onClick={onOpenBackupModal}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-800 hover:bg-neutral-700/80 text-neutral-300 border border-neutral-700/80 transition-all"
-              title="Cadangkan atau Pulihkan Data"
+              title="Cadangkan atau Pulihkan Data (Terkunci Password Admin)"
             >
               <Database className="w-3.5 h-3.5 text-indigo-400" />
               <span>Backup / JSON</span>
+              <Lock className="w-2.5 h-2.5 text-neutral-400 ml-0.5 opacity-70" />
             </button>
           </div>
         </div>

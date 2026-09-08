@@ -9,14 +9,14 @@ const STORAGE_KEYS = {
 };
 
 export const DEFAULT_SCHOOL_META: SchoolMeta = {
-  sekolah: "SMA Negeri 1 Teladan",
-  npsn: "40201020",
-  alamat: "Jl. Pendidikan No. 45",
-  semester: "Genap",
+  sekolah: "SMKN 2 Gorontalo",
+  npsn: "40501083",
+  alamat: "Kota Gorontalo",
+  semester: "Ganjil",
   tahun: "2026/2027",
   kota: "Gorontalo",
-  kepalaSekolah: "Drs. H. Abdul Rahman, M.Pd.",
-  nipKepalaSekolah: "19720415 199802 1 002"
+  kepalaSekolah: "",
+  nipKepalaSekolah: ""
 };
 
 export function getSchoolMeta(): SchoolMeta {
@@ -45,20 +45,22 @@ export function getTeachersList(): string[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return parsed.map((t: string) => String(t).toUpperCase());
       }
     }
   } catch (err) {
     console.warn("Failed to load teachers list from localStorage", err);
   }
-  // Initialize with default 72 teachers
-  saveTeachersList(DEFAULT_TEACHERS);
-  return DEFAULT_TEACHERS;
+  // Initialize with default 72 teachers (all uppercase)
+  const upperTeachers = DEFAULT_TEACHERS.map(t => t.toUpperCase());
+  saveTeachersList(upperTeachers);
+  return upperTeachers;
 }
 
 export function saveTeachersList(list: string[]): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.TEACHERS_LIST, JSON.stringify(list));
+    const upperList = list.map(t => String(t).trim().toUpperCase());
+    localStorage.setItem(STORAGE_KEYS.TEACHERS_LIST, JSON.stringify(upperList));
   } catch (err) {
     console.error("Failed to save teachers list to localStorage", err);
   }
@@ -85,30 +87,33 @@ export function saveSupervisionIndex(index: SupervisionIndex): void {
 }
 
 export function getTeacherRecord(name: string, schoolMeta?: SchoolMeta): SupervisionRecord {
-  const slug = slugifyTeacher(name);
+  const upperName = name.trim().toUpperCase();
+  const slug = slugifyTeacher(upperName);
   const meta = schoolMeta || getSchoolMeta();
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.RECORD_PREFIX + slug);
     if (raw) {
       const rec = JSON.parse(raw);
       return {
-        ...createBlankRecord(name, meta.kepalaSekolah, meta.nipKepalaSekolah),
+        ...createBlankRecord(upperName, meta.kepalaSekolah, meta.nipKepalaSekolah),
         ...rec,
-        name // ensure name matches
+        name: upperName // ensure uppercase name
       };
     }
   } catch (err) {
-    console.warn(`Failed to load record for ${name}`, err);
+    console.warn(`Failed to load record for ${upperName}`, err);
   }
 
-  return createBlankRecord(name, meta.kepalaSekolah, meta.nipKepalaSekolah);
+  return createBlankRecord(upperName, meta.kepalaSekolah, meta.nipKepalaSekolah);
 }
 
 export function saveTeacherRecord(record: SupervisionRecord): SupervisionIndex {
-  const slug = slugifyTeacher(record.name);
+  const upperName = record.name.trim().toUpperCase();
+  const slug = slugifyTeacher(upperName);
   const now = new Date().toISOString();
-  const updatedRecord = {
+  const updatedRecord: SupervisionRecord = {
     ...record,
+    name: upperName,
     updatedAt: now
   };
 
@@ -120,7 +125,7 @@ export function saveTeacherRecord(record: SupervisionRecord): SupervisionIndex {
 
     if (summary.count > 0) {
       index[slug] = {
-        name: updatedRecord.name,
+        name: upperName,
         nip: updatedRecord.nip || "",
         mapel: updatedRecord.mapel || "",
         total: summary.total,
@@ -188,16 +193,27 @@ export function importDataFromJSON(jsonString: string): boolean {
       saveSchoolMeta(parsed.schoolMeta);
     }
     if (Array.isArray(parsed.teachers) && parsed.teachers.length > 0) {
-      saveTeachersList(parsed.teachers);
+      saveTeachersList(parsed.teachers.map((t: string) => String(t).trim().toUpperCase()));
     }
     if (parsed.records) {
       Object.keys(parsed.records).forEach(slug => {
         const rec = parsed.records[slug];
+        if (rec && rec.name) {
+          rec.name = rec.name.trim().toUpperCase();
+        }
         localStorage.setItem(STORAGE_KEYS.RECORD_PREFIX + slug, JSON.stringify(rec));
       });
     }
     if (parsed.index) {
-      saveSupervisionIndex(parsed.index);
+      const upperIndex: SupervisionIndex = {};
+      Object.keys(parsed.index).forEach(k => {
+        const item = parsed.index[k];
+        upperIndex[k] = {
+          ...item,
+          name: item.name ? item.name.trim().toUpperCase() : item.name
+        };
+      });
+      saveSupervisionIndex(upperIndex);
     }
     return true;
   } catch (err) {
@@ -217,31 +233,91 @@ export function resetAllDataToDefault(): void {
   }
 }
 
-// Helper to seed a few realistic sample records for demonstration if desired
-export function seedSampleRecordsIfEmpty(): void {
-  const index = getSupervisionIndex();
-  if (Object.keys(index).length === 0) {
-    const samples = [
-      { name: "Abdul Rahman Bahsoan", mapel: "Informatika / TIK", kelas: "X & XI", jtm: "24", tugas: "Kepala Lab Komputer", sertif: "Teknik Informatika / 2018", scores: [4,4,4,4,4,4,4,3,4,4,4,4,3,3,4,4,3,4,4], catatan: "Perangkat administrasi sangat rapi dan lengkap berbasis LMS & Google Workspace.", tindakLanjut: "Dapat menjadi narasumber pengimbasan pemanfaatan media digital di Kombel." },
-      { name: "Ais Djafar", mapel: "Bahasa Indonesia", kelas: "XII", jtm: "24", tugas: "Wali Kelas XII-A", sertif: "Pendidikan Bahasa Indonesia / 2015", scores: [4,3,4,3,4,4,3,3,4,3,4,3,3,3,3,3,2,4,3], catatan: "Administrasi tersusun baik. Rencana asesmen sumatif terprogram jelas.", tindakLanjut: "Perlu melengkapi rubrik deskriptif pada instrumen penilaian harian." },
-      { name: "Alvian Lanti", mapel: "Matematika", kelas: "XI MIPA", jtm: "28", tugas: "Pembina OSIS", sertif: "Pendidikan Matematika / 2020", scores: [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,4,4], catatan: "Sangat baik dalam analisis capaian pembelajaran dan modul ajar terdiferensiasi.", tindakLanjut: "Pertahankan dan bagikan modul ajar di PMM (Platform Merdeka Mengajar)." },
-      { name: "Farida Rahim", mapel: "Bahasa Inggris", kelas: "X", jtm: "24", tugas: "Guru Piket", sertif: "Pendidikan Bahasa Inggris / 2017", scores: [3,3,3,2,3,3,3,2,4,3,3,3,2,2,2,3,2,3,2], catatan: "Perangkat pembelajaran cukup lengkap, namun asesmen awal kognitif perlu diperbaharui.", tindakLanjut: "Mengikuti workshop penyusunan instrumen Asesmen Awal dan KKTP." }
-    ];
+// Auto cleanup legacy sample records if any existed from previous demonstration and ensure uppercase teachers
+export function cleanupLegacyDummyData(): void {
+  try {
+    // Ensure all stored teachers are uppercase
+    const rawTeachers = localStorage.getItem(STORAGE_KEYS.TEACHERS_LIST);
+    if (rawTeachers) {
+      try {
+        const list = JSON.parse(rawTeachers);
+        if (Array.isArray(list) && list.length > 0) {
+          const upperList = list.map(t => String(t).trim().toUpperCase());
+          localStorage.setItem(STORAGE_KEYS.TEACHERS_LIST, JSON.stringify(upperList));
+        }
+      } catch (e) {}
+    }
 
-    const meta = getSchoolMeta();
-    samples.forEach(s => {
-      const rec = createBlankRecord(s.name, meta.kepalaSekolah, meta.nipKepalaSekolah);
-      rec.mapel = s.mapel;
-      rec.kelas = s.kelas;
-      rec.jtm = s.jtm;
-      rec.tugasTambahan = s.tugas;
-      rec.sertifikasi = s.sertif;
-      rec.catatan = s.catatan;
-      rec.tindakLanjut = s.tindakLanjut;
-      s.scores.forEach((val, idx) => {
-        rec.scores[idx + 1] = val as 0 | 1 | 2 | 3 | 4;
-      });
-      saveTeacherRecord(rec);
-    });
+    // Ensure all index entries have uppercase names
+    const rawIndex = localStorage.getItem(STORAGE_KEYS.INDEX);
+    if (rawIndex) {
+      try {
+        const parsed = JSON.parse(rawIndex);
+        let changed = false;
+        Object.keys(parsed).forEach(k => {
+          if (parsed[k]?.name && parsed[k].name !== parsed[k].name.toUpperCase()) {
+            parsed[k].name = parsed[k].name.toUpperCase();
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem(STORAGE_KEYS.INDEX, JSON.stringify(parsed));
+        }
+      } catch (e) {}
+    }
+
+    const isCleaned = localStorage.getItem("sup_cleaned_dummy_v1");
+    if (!isCleaned) {
+      // Check if school meta still has the old mock school
+      const rawMeta = localStorage.getItem(STORAGE_KEYS.SCHOOL_META);
+      if (rawMeta && rawMeta.includes("SMA Negeri 1 Teladan")) {
+        saveSchoolMeta(DEFAULT_SCHOOL_META);
+      }
+
+      // Check if stored records contain only the sample seed records
+      if (rawIndex) {
+        const parsed = JSON.parse(rawIndex);
+        const keys = Object.keys(parsed);
+        const sampleSlugs = ["abdul-rahman-bahsoan", "ais-djafar", "alvian-lanti", "farida-rahim"];
+        const onlySamples = keys.length > 0 && keys.every(k => sampleSlugs.includes(k));
+        
+        if (onlySamples) {
+          sampleSlugs.forEach(slug => {
+            localStorage.removeItem(STORAGE_KEYS.RECORD_PREFIX + slug);
+          });
+          saveSupervisionIndex({});
+        }
+      }
+
+      localStorage.setItem("sup_cleaned_dummy_v1", "true");
+    }
+  } catch (err) {
+    console.warn("Cleanup legacy dummy data failed", err);
   }
 }
+
+// Clear all evaluation records and reset scores
+export function clearAllSupervisionRecords(): void {
+  try {
+    const keys = Object.keys(localStorage);
+    keys.forEach(k => {
+      if (k.startsWith(STORAGE_KEYS.RECORD_PREFIX)) {
+        localStorage.removeItem(k);
+      }
+    });
+    saveSupervisionIndex({});
+  } catch (err) {
+    console.error("Failed to clear supervision records", err);
+  }
+}
+
+// Clear or reset teachers list
+export function clearAllTeachers(): void {
+  try {
+    saveTeachersList([]);
+    clearAllSupervisionRecords();
+  } catch (err) {
+    console.error("Failed to clear teachers", err);
+  }
+}
+

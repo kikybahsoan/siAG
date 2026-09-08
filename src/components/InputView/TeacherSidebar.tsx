@@ -43,7 +43,7 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
   const handleCreateTeacher = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTeacherName.trim()) return;
-    onAddTeacher(newTeacherName.trim());
+    onAddTeacher(newTeacherName.trim().toUpperCase());
     setNewTeacherName("");
     setIsAdding(false);
   };
@@ -91,10 +91,10 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
             <input
               type="text"
               value={newTeacherName}
-              onChange={(e) => setNewTeacherName(e.target.value)}
-              placeholder="Contoh: Dra. Hj. Siti Rahma, M.Pd"
+              onChange={(e) => setNewTeacherName(e.target.value.toUpperCase())}
+              placeholder="CONTOH: DRA. HJ. SITI RAHMA, M.PD"
               autoFocus
-              className="w-full text-xs px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-indigo-500"
+              className="w-full text-xs px-2.5 py-1.5 bg-neutral-900 border border-neutral-700 rounded-xl text-neutral-100 placeholder-neutral-500 focus:outline-none focus:border-indigo-500 uppercase"
             />
             <div className="flex justify-end gap-1.5">
               <button
@@ -207,8 +207,8 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
                     }`}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className={`truncate leading-snug ${isActive ? "font-bold text-white" : "font-medium text-neutral-200"}`}>
-                      {teacher}
+                    <div className={`truncate leading-snug uppercase ${isActive ? "font-bold text-white" : "font-medium text-neutral-200"}`}>
+                      {teacher.toUpperCase()}
                     </div>
                     {entry && entry.mapel && (
                       <div className="truncate text-[10px] mt-0.5 text-neutral-400">

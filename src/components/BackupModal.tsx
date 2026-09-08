@@ -11,7 +11,8 @@ import {
 import { 
   exportAllDataAsJSON, 
   importDataFromJSON, 
-  resetAllDataToDefault 
+  resetAllDataToDefault,
+  clearAllSupervisionRecords 
 } from "../utils/storage";
 
 interface BackupModalProps {
@@ -68,6 +69,15 @@ export const BackupModal: React.FC<BackupModalProps> = ({
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleClearScores = () => {
+    if (window.confirm("Hapus seluruh nilai dan riwayat supervisi yang ada? (Daftar nama guru akan tetap tersimpan).")) {
+      clearAllSupervisionRecords();
+      setImportStatus("Semua nilai supervisi berhasil dibersihkan! Status semua guru kembali 'Belum Disupervisi'.");
+      setIsSuccess(true);
+      onDataRestored();
+    }
   };
 
   const handleReset = () => {
@@ -164,15 +174,27 @@ export const BackupModal: React.FC<BackupModalProps> = ({
             </label>
           </div>
 
-          {/* Reset button & footer */}
-          <div className="pt-3 border-t border-neutral-800 flex justify-between items-center">
-            <button
-              onClick={handleReset}
-              className="text-rose-400 hover:text-rose-300 transition-colors inline-flex items-center gap-1.5 text-[11px] font-medium"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset ke Awal</span>
-            </button>
+          {/* Reset buttons & footer */}
+          <div className="pt-3 border-t border-neutral-800 flex flex-wrap justify-between items-center gap-2">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleClearScores}
+                className="text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center gap-1.5 text-[11px] font-medium"
+                title="Hapus semua nilai supervisi, daftar nama guru tetap ada"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Bersihkan Nilai</span>
+              </button>
+
+              <button
+                onClick={handleReset}
+                className="text-rose-400 hover:text-rose-300 transition-colors inline-flex items-center gap-1.5 text-[11px] font-medium"
+                title="Kembalikan semua ke setelan awal"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Total</span>
+              </button>
+            </div>
 
             <button
               onClick={onClose}

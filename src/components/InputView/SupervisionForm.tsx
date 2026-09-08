@@ -145,8 +145,8 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
                 </span>
               )}
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-neutral-100 tracking-tight leading-tight">
-              {record.name}
+            <h2 className="text-2xl sm:text-3xl font-bold text-neutral-100 tracking-tight leading-tight uppercase">
+              {record.name.toUpperCase()}
             </h2>
             <p className="text-xs text-neutral-400">
               19 Indikator Evaluasi Bukti Otentik Kurikulum Merdeka &bull; Skor Maksimal 76
