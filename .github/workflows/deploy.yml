@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -32,21 +32,27 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          BASE_URL: /${{ github.event.repository.name }}/
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          BASE_URL: ./${{ github.event.repository.name && '' || '' }}
 
-      - name: Upload artifact
+      - name: Prepare docs and 404
+        run: |
+          cp dist/index.html dist/404.html || true
+          touch dist/.nojekyll
+
+      - name: Upload artifact for GitHub Actions Pages
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./dist
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy to GitHub Actions Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
+
+      - name: Deploy to gh-pages branch (Fallback)
+        continue-on-error: true
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          force_orphan: true
