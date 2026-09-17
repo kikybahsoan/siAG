@@ -7,7 +7,7 @@ import {
   calculateScoreSummary, 
   SCORE_RUBRIC_DESCRIPTIONS 
 } from "../../data/supervisionData";
-import { Printer, ArrowLeft, Building2, ExternalLink } from "lucide-react";
+import { Printer, ArrowLeft, Building2, ExternalLink, SlidersHorizontal } from "lucide-react";
 
 interface PrintSheetProps {
   record: SupervisionRecord;
@@ -15,6 +15,7 @@ interface PrintSheetProps {
   teachers: string[];
   onSelectTeacher: (name: string) => void;
   onBack: () => void;
+  onOpenKopCustomizer?: () => void;
 }
 
 export const PrintSheet: React.FC<PrintSheetProps> = ({
@@ -22,7 +23,8 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
   schoolMeta,
   teachers,
   onSelectTeacher,
-  onBack
+  onBack,
+  onOpenKopCustomizer
 }) => {
   const summary = calculateScoreSummary(record);
 
@@ -84,47 +86,105 @@ export const PrintSheet: React.FC<PrintSheetProps> = ({
           )}
         </div>
 
-        <button
-          onClick={handlePrint}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/30"
-        >
-          <Printer className="w-4 h-4" />
-          <span>Cetak / Simpan PDF (A4)</span>
-        </button>
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          {onOpenKopCustomizer && (
+            <button
+              onClick={onOpenKopCustomizer}
+              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700/80 text-xs font-semibold rounded-xl transition-colors shadow-sm"
+              title="Kustomisasi logo, teks kop surat, alamat, atau banner kop"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Kustomisasi Kop &amp; Logo</span>
+            </button>
+          )}
+
+          <button
+            onClick={handlePrint}
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/30"
+          >
+            <Printer className="w-4 h-4" />
+            <span>Cetak / Simpan PDF (A4)</span>
+          </button>
+        </div>
       </div>
 
       {/* Formal Printable Document Canvas */}
       <div className="bg-white border border-[#DCD5C2] print:border-none shadow-md print:shadow-none p-6 sm:p-10 max-w-[860px] mx-auto text-black font-serif leading-normal">
-        {/* Kop Surat Sekolah dengan Logo Resmi */}
-        <div className="flex items-center gap-4 sm:gap-6 pb-3 border-b-2 border-black">
-          <img
-            src={resolveAssetUrl(schoolMeta.logoUrl || "logo new.jpg")}
-            alt="Logo SMKN 2 Gorontalo"
-            className="w-20 h-20 sm:w-24 sm:h-24 object-contain flex-shrink-0"
-            onError={(e) => {
-              const target = e.currentTarget;
-              const fallback = resolveAssetUrl("logo-new.jpg");
-              if (target.src !== fallback) {
-                target.src = fallback;
-              }
-            }}
-          />
-          <div className="text-center flex-1 space-y-1">
-            <h2 className="text-xs sm:text-sm font-sans font-bold uppercase tracking-wider text-neutral-800">
-              Pemerintah Daerah Provinsi / Dinas Pendidikan
-            </h2>
-            <h1 className="text-lg sm:text-xl font-bold uppercase tracking-tight text-black">
-              {schoolMeta.sekolah || "SMKN 2 Gorontalo"}
-            </h1>
-            <p className="text-xs font-sans text-neutral-600">
-              {schoolMeta.alamat ? `${schoolMeta.alamat} - ` : ""}
-              {schoolMeta.kota || "Gorontalo"}
-              {schoolMeta.npsn ? ` &middot; NPSN: ${schoolMeta.npsn}` : ""}
-            </p>
+        {/* Kop Surat Sekolah (Bisa Format Banner Gambar atau Format Teks Kedinasan Resmi) */}
+        {schoolMeta.kopType === "image" && schoolMeta.kopImageUrl ? (
+          <div className="w-full flex justify-center pb-3 mb-5 border-b-2 border-black">
+            <img
+              src={resolveAssetUrl(schoolMeta.kopImageUrl)}
+              alt="Banner Kop Surat"
+              className="max-h-32 w-full object-contain"
+            />
           </div>
-          <div className="w-20 sm:w-24 hidden sm:block flex-shrink-0" aria-hidden="true" />
-        </div>
-        <div className="border-b border-black mt-0.5 mb-5" />
+        ) : (
+          <div className="pb-3 border-b-4 border-double border-black mb-5">
+            <div className="flex items-center justify-between gap-4 sm:gap-6">
+              {/* Logo Kiri (Utama) */}
+              <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 flex items-center justify-center">
+                <img
+                  src={resolveAssetUrl(schoolMeta.logoUrl || "logo new.jpg")}
+                  alt="Logo Sekolah"
+                  className="max-w-full max-h-full object-contain"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    const fallback = resolveAssetUrl("logo-new.jpg");
+                    if (target.src !== fallback) {
+                      target.src = fallback;
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Teks Kop Surat Tengah */}
+              <div className="text-center flex-1 space-y-0.5 min-w-0">
+                <h3 className="text-xs sm:text-sm font-sans font-bold uppercase tracking-wider text-neutral-900 leading-tight">
+                  {schoolMeta.kopInstansi || "PEMERINTAH PROVINSI GORONTALO"}
+                </h3>
+                <h2 className="text-xs sm:text-sm font-sans font-bold uppercase tracking-wide text-neutral-900 leading-tight">
+                  {schoolMeta.kopDinas || "DINAS PENDIDIKAN DAN KEBUDAYAAN"}
+                </h2>
+                <h1 className="text-base sm:text-xl font-sans font-extrabold uppercase tracking-tight text-black leading-tight py-0.5">
+                  {schoolMeta.kopSekolah || schoolMeta.sekolah || "SMK NEGERI 2 GORONTALO"}
+                </h1>
+                <p className="text-[11px] sm:text-xs font-sans text-neutral-700 leading-tight">
+                  {schoolMeta.kopAlamat || (schoolMeta.alamat ? `${schoolMeta.alamat} - ` : "") + (schoolMeta.kota || "Gorontalo")}
+                </p>
+                {schoolMeta.kopKontak && (
+                  <p className="text-[10px] sm:text-[11px] font-sans text-neutral-600 leading-tight">
+                    {schoolMeta.kopKontak}
+                  </p>
+                )}
+                {schoolMeta.kopNpsnAkreditasi ? (
+                  <p className="text-[10px] sm:text-[11px] font-sans font-semibold text-neutral-800 leading-tight">
+                    {schoolMeta.kopNpsnAkreditasi}
+                  </p>
+                ) : (
+                  schoolMeta.npsn && (
+                    <p className="text-[10px] sm:text-[11px] font-sans text-neutral-600 leading-tight">
+                      NPSN: {schoolMeta.npsn}
+                    </p>
+                  )
+                )}
+              </div>
+
+              {/* Logo Kanan (Sekunder / Tut Wuri Handayani) */}
+              {schoolMeta.showLogoKanan && schoolMeta.logoKananUrl ? (
+                <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 flex items-center justify-center">
+                  <img
+                    src={resolveAssetUrl(schoolMeta.logoKananUrl)}
+                    alt="Logo Kanan"
+                    className="max-w-full max-h-full object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="w-20 sm:w-24 hidden sm:block flex-shrink-0" aria-hidden="true" />
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Title */}
         <div className="text-center mb-6">

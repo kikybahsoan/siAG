@@ -1,5 +1,6 @@
 import { SchoolMeta, SupervisionIndex, SupervisionRecord, TeacherIndexItem } from "../types";
 import { DEFAULT_TEACHERS, createBlankRecord, slugifyTeacher, calculateScoreSummary } from "../data/supervisionData";
+import { RESTORED_SCHOOL_META, buildRestoredDataset } from "../data/restoredSeedData";
 
 const STORAGE_KEYS = {
   INDEX: "sup_v2_index",
@@ -8,17 +9,7 @@ const STORAGE_KEYS = {
   RECORD_PREFIX: "sup_v2_rec:"
 };
 
-export const DEFAULT_SCHOOL_META: SchoolMeta = {
-  sekolah: "SMKN 2 Gorontalo",
-  npsn: "40501083",
-  alamat: "Kota Gorontalo",
-  semester: "Ganjil",
-  tahun: "2026/2027",
-  kota: "Gorontalo",
-  kepalaSekolah: "",
-  nipKepalaSekolah: "",
-  logoUrl: "/logo new.jpg"
-};
+export const DEFAULT_SCHOOL_META: SchoolMeta = { ...RESTORED_SCHOOL_META };
 
 export function getSchoolMeta(): SchoolMeta {
   try {
@@ -268,33 +259,117 @@ export function cleanupLegacyDummyData(): void {
       } catch (e) {}
     }
 
-    const isCleaned = localStorage.getItem("sup_cleaned_dummy_v1");
-    if (!isCleaned) {
-      // Check if school meta still has the old mock school
-      const rawMeta = localStorage.getItem(STORAGE_KEYS.SCHOOL_META);
-      if (rawMeta && rawMeta.includes("SMA Negeri 1 Teladan")) {
-        saveSchoolMeta(DEFAULT_SCHOOL_META);
-      }
-
-      // Check if stored records contain only the sample seed records
-      if (rawIndex) {
-        const parsed = JSON.parse(rawIndex);
-        const keys = Object.keys(parsed);
-        const sampleSlugs = ["abdul-rahman-bahsoan", "ais-djafar", "alvian-lanti", "farida-rahim"];
-        const onlySamples = keys.length > 0 && keys.every(k => sampleSlugs.includes(k));
-        
-        if (onlySamples) {
-          sampleSlugs.forEach(slug => {
-            localStorage.removeItem(STORAGE_KEYS.RECORD_PREFIX + slug);
-          });
-          saveSupervisionIndex({});
-        }
-      }
-
-      localStorage.setItem("sup_cleaned_dummy_v1", "true");
+    // Restore full dataset if index is empty or previously wiped
+    const restored = restoreCsvSeedData(false);
+    if (restored > 0) {
+      console.log(`[Storage] Restored ${restored} teacher evaluation records from CSV seed.`);
     }
   } catch (err) {
     console.warn("Cleanup legacy dummy data failed", err);
+  }
+}
+
+/**
+ * Restores the complete CSV dataset (72 teachers and all 18 evaluated records)
+ * If force is false, it only populates records that are empty or missing, never overwriting existing evaluations.
+ */
+export function restoreCsvSeedData(force = false): number {
+  try {
+    const dataset = buildRestoredDataset();
+    const currentIndex = getSupervisionIndex();
+    const currentTeachers = getTeachersList();
+    const currentMeta = getSchoolMeta();
+
+    // 1. Ensure school meta has SMKN 2 Gorontalo and Kop data
+    const updatedMeta: SchoolMeta = {
+      ...dataset.meta,
+      ...currentMeta,
+      sekolah: currentMeta.sekolah || dataset.meta.sekolah,
+      kepalaSekolah: currentMeta.kepalaSekolah || dataset.meta.kepalaSekolah,
+      nipKepalaSekolah: currentMeta.nipKepalaSekolah || dataset.meta.nipKepalaSekolah,
+      kopInstansi: currentMeta.kopInstansi || dataset.meta.kopInstansi,
+      kopDinas: currentMeta.kopDinas || dataset.meta.kopDinas,
+      kopSekolah: currentMeta.kopSekolah || dataset.meta.kopSekolah,
+      kopAlamat: currentMeta.kopAlamat || dataset.meta.kopAlamat,
+      kopKontak: currentMeta.kopKontak || dataset.meta.kopKontak,
+      kopNpsnAkreditasi: currentMeta.kopNpsnAkreditasi || dataset.meta.kopNpsnAkreditasi,
+      logoUrl: currentMeta.logoUrl || dataset.meta.logoUrl,
+      kopType: currentMeta.kopType || dataset.meta.kopType || "text"
+    };
+    saveSchoolMeta(updatedMeta);
+
+    // 2. Ensure all 72 teachers exist
+    const teacherSet = new Set<string>();
+    const mergedTeachers: string[] = [];
+    currentTeachers.forEach(t => {
+      const u = t.trim().toUpperCase();
+      if (u && !teacherSet.has(u)) {
+        teacherSet.add(u);
+        mergedTeachers.push(u);
+      }
+    });
+    dataset.teachers.forEach(t => {
+      const u = t.trim().toUpperCase();
+      if (u && !teacherSet.has(u)) {
+        teacherSet.add(u);
+        mergedTeachers.push(u);
+      }
+    });
+    saveTeachersList(mergedTeachers);
+
+    // 3. Restore records and index
+    let restoredCount = 0;
+    const newIndex: SupervisionIndex = { ...currentIndex };
+
+    dataset.teachers.forEach(teacher => {
+      const slug = slugifyTeacher(teacher);
+      const seedRec = dataset.records[slug];
+      if (!seedRec) return;
+
+      const rawExisting = localStorage.getItem(STORAGE_KEYS.RECORD_PREFIX + slug);
+      let shouldRestore = force || !rawExisting;
+
+      if (rawExisting && !force) {
+        try {
+          const parsed = JSON.parse(rawExisting) as SupervisionRecord;
+          const hasScores = parsed.scores && Object.values(parsed.scores).some(v => typeof v === "number" && v > 0);
+          const hasNotes = Boolean(parsed.catatan?.trim() || parsed.tindakLanjut?.trim() || parsed.driveUrl?.trim());
+          // If local record has no scores/notes but seed has scores/notes, restore it!
+          const seedHasScores = seedRec.scores && Object.values(seedRec.scores).some(v => typeof v === "number" && v > 0);
+          if (!hasScores && !hasNotes && (seedHasScores || seedRec.mapel || seedRec.nip)) {
+            shouldRestore = true;
+          }
+        } catch (e) {
+          shouldRestore = true;
+        }
+      }
+
+      if (shouldRestore) {
+        saveTeacherRecord(seedRec);
+        const summary = calculateScoreSummary(seedRec);
+        if (summary.count > 0 || seedRec.driveUrl) {
+          newIndex[slug] = {
+            name: teacher,
+            nip: seedRec.nip || "",
+            mapel: seedRec.mapel || "",
+            driveUrl: seedRec.driveUrl || "",
+            total: summary.count > 0 ? summary.total : null,
+            count: summary.count,
+            percentage: summary.count > 0 ? summary.percentage : null,
+            predikatCls: summary.count > 0 ? summary.predikat.cls : "z",
+            predikatLabel: summary.count > 0 ? summary.predikat.label : "Belum Disupervisi",
+            updatedAt: seedRec.updatedAt || new Date().toISOString()
+          };
+          restoredCount++;
+        }
+      }
+    });
+
+    saveSupervisionIndex(newIndex);
+    return restoredCount;
+  } catch (err) {
+    console.error("Failed to restore CSV seed data", err);
+    return 0;
   }
 }
 

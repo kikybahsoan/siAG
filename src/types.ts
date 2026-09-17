@@ -40,6 +40,17 @@ export interface SchoolMeta {
   kepalaSekolah: string;
   nipKepalaSekolah: string;
   logoUrl?: string;
+  // Kustomisasi Kop Surat & Logo
+  kopType?: "text" | "image";
+  kopImageUrl?: string;
+  kopInstansi?: string;
+  kopDinas?: string;
+  kopSekolah?: string;
+  kopAlamat?: string;
+  kopKontak?: string;
+  kopNpsnAkreditasi?: string;
+  logoKananUrl?: string;
+  showLogoKanan?: boolean;
 }
 
 export interface TeacherIndexItem {

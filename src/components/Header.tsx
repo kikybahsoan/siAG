@@ -17,7 +17,9 @@ import {
   Lock,
   Image as ImageIcon,
   Upload,
-  RotateCcw
+  RotateCcw,
+  RefreshCw,
+  SlidersHorizontal
 } from "lucide-react";
 
 interface HeaderProps {
@@ -28,6 +30,10 @@ interface HeaderProps {
   onOpenBackupModal: () => void;
   onOpenSyncModal: () => void;
   isSyncConnected?: boolean;
+  isSyncing?: boolean;
+  lastSyncTime?: string | null;
+  onQuickSync?: () => void;
+  onOpenKopCustomizer?: () => void;
   totalTeachers: number;
   completedCount: number;
 }
@@ -40,6 +46,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenBackupModal,
   onOpenSyncModal,
   isSyncConnected = false,
+  isSyncing = false,
+  lastSyncTime = null,
+  onQuickSync,
+  onOpenKopCustomizer,
   totalTeachers,
   completedCount
 }) => {
@@ -105,6 +115,18 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
 
+            {/* Kop & Logo Customizer Button */}
+            {onOpenKopCustomizer && (
+              <button
+                onClick={onOpenKopCustomizer}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-800 hover:bg-neutral-700/80 text-neutral-200 border border-neutral-700/80 transition-all shadow-sm"
+                title="Kustomisasi Kop Surat resmi, logo sekolah, dan logo sekunder untuk lembar cetak"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Kop &amp; Logo</span>
+              </button>
+            )}
+
             {/* School Info Toggle */}
             <button
               onClick={() => setIsEditingMeta(!isEditingMeta)}
@@ -119,6 +141,28 @@ export const Header: React.FC<HeaderProps> = ({
               <span>{isEditingMeta ? "Tutup Info" : "Info Sekolah"}</span>
             </button>
 
+            {/* Direct Quick Sync Button (One-click sync with smart merge, no password needed) */}
+            {onQuickSync && (
+              <button
+                onClick={onQuickSync}
+                disabled={isSyncing}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                  isSyncing
+                    ? "bg-indigo-950/60 text-indigo-300 border-indigo-500/50 cursor-wait"
+                    : "bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-200 border-indigo-500/40 hover:border-indigo-500/60 shadow-sm"
+                }`}
+                title="Tarik data terbaru dari device lain & gabungkan otomatis tanpa menghapus data yang sudah ada"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin text-indigo-400" : "text-indigo-400"}`} />
+                <span>{isSyncing ? "Menyinkronkan..." : "Sinkronkan"}</span>
+                {lastSyncTime && !isSyncing && (
+                  <span className="hidden sm:inline-block text-[10px] text-indigo-300/80 font-mono font-normal">
+                    &bull; {lastSyncTime}
+                  </span>
+                )}
+              </button>
+            )}
+
             {/* Cloud Spreadsheet Sync Button (Locked with password) */}
             <button
               onClick={onOpenSyncModal}
@@ -127,10 +171,10 @@ export const Header: React.FC<HeaderProps> = ({
                   ? "bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border-emerald-500/40 shadow-sm shadow-emerald-950"
                   : "bg-neutral-800 hover:bg-neutral-700/80 text-neutral-300 border-neutral-700/80"
               }`}
-              title="Sinkronisasi Cloud Database Spreadsheet (Terkunci Password Admin)"
+              title="Pengaturan URL Cloud Database Spreadsheet (Terkunci Password Admin)"
             >
               <Cloud className={`w-3.5 h-3.5 ${isSyncConnected ? "text-emerald-400" : "text-neutral-400"}`} />
-              <span>Sinkron Spreadsheet</span>
+              <span>Pengaturan Cloud</span>
               {isSyncConnected && (
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               )}
@@ -298,6 +342,16 @@ export const Header: React.FC<HeaderProps> = ({
                     <RotateCcw className="w-3 h-3" />
                     <span>Reset Default</span>
                   </button>
+                  {onOpenKopCustomizer && (
+                    <button
+                      type="button"
+                      onClick={onOpenKopCustomizer}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 transition-colors"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                      <span>Kustomisasi Kop &amp; Logo Lengkap</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

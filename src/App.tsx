@@ -14,7 +14,8 @@ import {
 import { 
   getSyncConfig, 
   pushToSpreadsheet, 
-  pullFromSpreadsheet 
+  pullFromSpreadsheet,
+  isRecordEvaluated 
 } from "./utils/spreadsheetSync";
 import { Header } from "./components/Header";
 import { TeacherSidebar } from "./components/InputView/TeacherSidebar";
@@ -25,6 +26,7 @@ import { AnalyticsDashboard } from "./components/AnalyticsView/AnalyticsDashboar
 import { BackupModal } from "./components/BackupModal";
 import { SpreadsheetSyncModal } from "./components/SpreadsheetSyncModal";
 import { AdminAuthModal } from "./components/AdminAuthModal";
+import { KopCustomizerModal } from "./components/KopCustomizerModal";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("input");
@@ -35,13 +37,71 @@ export default function App() {
   const [currentRecord, setCurrentRecord] = useState<SupervisionRecord | null>(null);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [isKopCustomizerOpen, setIsKopCustomizerOpen] = useState<boolean>(false);
   const [isSyncConnected, setIsSyncConnected] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
+    const last = getSyncConfig().lastSyncTime;
+    if (!last) return null;
+    try {
+      return new Date(last).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return null;
+    }
+  });
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
   // Admin password modal states for locked buttons
   const [isAdminAuthOpen, setIsAdminAuthOpen] = useState<boolean>(false);
   const [pendingAdminTarget, setPendingAdminTarget] = useState<"sync" | "backup" | null>(null);
   const [adminActionTitle, setAdminActionTitle] = useState<string>("Akses Menu Administrator");
+
+  // Core Smart Sync: Pulls or pushes with two-way merging (Anti-Hapus)
+  const triggerAutoSync = async (forcePush = false) => {
+    const syncConf = getSyncConfig();
+    if (!syncConf.webAppUrl || !syncConf.webAppUrl.includes("/exec")) return;
+    if (isSyncing) return;
+
+    setIsSyncing(true);
+    try {
+      const res = forcePush 
+        ? await pushToSpreadsheet(syncConf.webAppUrl)
+        : await pullFromSpreadsheet(syncConf.webAppUrl);
+
+      if (res.success) {
+        setIsSyncConnected(true);
+        const freshMeta = getSchoolMeta();
+        const freshTeachers = getTeachersList();
+        const freshIndex = getSupervisionIndex();
+
+        setSchoolMeta(freshMeta);
+        setTeachers(freshTeachers);
+        setIndex(freshIndex);
+
+        const nowFormatted = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+        setLastSyncTime(nowFormatted);
+
+        // Update current record if active teacher's evaluation has arrived from another device
+        if (activeTeacher) {
+          const freshRecord = getTeacherRecord(activeTeacher, freshMeta);
+          if (activeTab !== "input") {
+            setCurrentRecord(freshRecord);
+          } else {
+            setCurrentRecord(prev => {
+              if (!prev || !isRecordEvaluated(prev)) {
+                return freshRecord;
+              }
+              return prev;
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn("Auto-sync notice:", err?.message || err);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Initialize application data
   useEffect(() => {
@@ -67,10 +127,11 @@ export default function App() {
     const connected = !!syncConf.webAppUrl && syncConf.webAppUrl.includes("/exec");
     setIsSyncConnected(connected);
 
-    // Initial pull on startup
+    // Initial pull on startup to fetch other devices' progress
     if (syncConf.autoSync && syncConf.webAppUrl) {
       pullFromSpreadsheet(syncConf.webAppUrl).then((res) => {
         if (res.success) {
+          setIsSyncConnected(true);
           const freshMeta = getSchoolMeta();
           const freshTeachers = getTeachersList();
           const freshIndex = getSupervisionIndex();
@@ -78,8 +139,10 @@ export default function App() {
           setTeachers(freshTeachers);
           setIndex(freshIndex);
           if (firstTeacher) {
-            setCurrentRecord(getTeacherRecord(firstTeacher, freshMeta));
+            const freshRec = getTeacherRecord(firstTeacher, freshMeta);
+            setCurrentRecord(freshRec);
           }
+          setLastSyncTime(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
         }
       }).catch((err) => {
         console.warn("Initial sync notice:", err?.message || err);
@@ -89,45 +152,45 @@ export default function App() {
     setIsInitialized(true);
   }, []);
 
-  // Automatic background synchronization every 10 minutes (600,000 ms)
-  // Dilakukan berkala setiap 10 menit agar tidak mengganggu proses pengisian data yang sedang berlangsung
+  // Fast automatic background synchronization every 30 seconds
+  // Menjamin data yang diisi di HP segera terbaca di Laptop dan perangkat lain
   useEffect(() => {
     if (!isInitialized) return;
 
-    const TEN_MINUTES_MS = 10 * 60 * 1000; // 10 Menit
-
-    const intervalId = setInterval(async () => {
-      // Don't poll if document is hidden or offline
+    const intervalId = setInterval(() => {
       if (document.hidden || !navigator.onLine) return;
-
       const syncConf = getSyncConfig();
-      if (!syncConf.autoSync || !syncConf.webAppUrl) return;
-
-      try {
-        const res = await pullFromSpreadsheet(syncConf.webAppUrl);
-        if (res.success) {
-          const freshMeta = getSchoolMeta();
-          const freshTeachers = getTeachersList();
-          const freshIndex = getSupervisionIndex();
-
-          setSchoolMeta(freshMeta);
-          setTeachers(freshTeachers);
-          setIndex(freshIndex);
-
-          // PENTING: Jangan pernah menimpa form jika user sedang berada di tab input formulir
-          // agar data penilaian yang sedang diklik/diisi tidak ter-reset secara tiba-tiba!
-          if (activeTab !== "input" && activeTeacher) {
-            const freshRecord = getTeacherRecord(activeTeacher, freshMeta);
-            setCurrentRecord(freshRecord);
-          }
-        }
-      } catch (err) {
-        console.warn("10 minutes periodic auto-sync notice:", err);
+      if (syncConf.autoSync && syncConf.webAppUrl) {
+        triggerAutoSync(false);
       }
-    }, TEN_MINUTES_MS);
+    }, 30000); // 30 Detik
 
     return () => clearInterval(intervalId);
-  }, [isInitialized, activeTeacher, activeTab]);
+  }, [isInitialized, activeTeacher, activeTab, isSyncing]);
+
+  // Synchronize immediately when user focuses the window, tab becomes visible, or comes back online
+  useEffect(() => {
+    if (!isInitialized) return;
+
+    const handleFocusOrVisible = () => {
+      if (!document.hidden && navigator.onLine) {
+        const syncConf = getSyncConfig();
+        if (syncConf.autoSync && syncConf.webAppUrl) {
+          triggerAutoSync(false);
+        }
+      }
+    };
+
+    window.addEventListener("focus", handleFocusOrVisible);
+    document.addEventListener("visibilitychange", handleFocusOrVisible);
+    window.addEventListener("online", handleFocusOrVisible);
+
+    return () => {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      document.removeEventListener("visibilitychange", handleFocusOrVisible);
+      window.removeEventListener("online", handleFocusOrVisible);
+    };
+  }, [isInitialized, activeTeacher, activeTab, isSyncing]);
 
   // When active teacher changes, load teacher record (uppercase guaranteed)
   const handleSelectTeacher = (name: string) => {
@@ -137,7 +200,7 @@ export default function App() {
     setCurrentRecord(rec);
   };
 
-  // Save record with immediate autoSync push
+  // Save record with immediate smart merge and autoSync push
   const handleSaveRecord = (recordToSave: SupervisionRecord) => {
     const upperRecord: SupervisionRecord = {
       ...recordToSave,
@@ -147,12 +210,10 @@ export default function App() {
     setIndex({ ...updatedIndex });
     setCurrentRecord(upperRecord);
 
-    // Immediate background push to spreadsheet if autoSync enabled
+    // Immediate background push to cloud (with pre-merge protection)
     const syncConf = getSyncConfig();
     if (syncConf.autoSync && syncConf.webAppUrl) {
-      pushToSpreadsheet(syncConf.webAppUrl).catch((err) => {
-        console.warn("Auto-sync background push error:", err);
-      });
+      triggerAutoSync(true);
     }
   };
 
@@ -288,12 +349,21 @@ export default function App() {
           {/* Top Header & School Details Bento Card */}
           <Header
             activeTab={activeTab}
-            onTabChange={setActiveTab}
+            onTabChange={(tab) => {
+              setActiveTab(tab);
+              if (tab !== "input") {
+                triggerAutoSync(false);
+              }
+            }}
             schoolMeta={schoolMeta}
             onUpdateSchoolMeta={handleUpdateSchoolMeta}
             onOpenBackupModal={handleOpenBackupWithAuth}
             onOpenSyncModal={handleOpenSyncWithAuth}
+            onOpenKopCustomizer={() => setIsKopCustomizerOpen(true)}
             isSyncConnected={isSyncConnected}
+            isSyncing={isSyncing}
+            lastSyncTime={lastSyncTime}
+            onQuickSync={() => triggerAutoSync(false)}
             totalTeachers={teachers.length}
             completedCount={completedCount}
           />
@@ -344,6 +414,7 @@ export default function App() {
               teachers={teachers}
               onSelectTeacher={handleSelectTeacher}
               onBack={() => setActiveTab("input")}
+              onOpenKopCustomizer={() => setIsKopCustomizerOpen(true)}
             />
           )}
 
@@ -363,6 +434,14 @@ export default function App() {
             <span>kikybahsoan - smkn2gorontalo</span>
           </div>
         </footer>
+
+        {/* Kop Surat & Logo Customizer Modal */}
+        <KopCustomizerModal
+          isOpen={isKopCustomizerOpen}
+          onClose={() => setIsKopCustomizerOpen(false)}
+          schoolMeta={schoolMeta}
+          onSave={handleUpdateSchoolMeta}
+        />
 
         {/* Backup & Restore Modal */}
         <BackupModal
