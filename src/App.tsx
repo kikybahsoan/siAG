@@ -81,19 +81,11 @@ export default function App() {
         const nowFormatted = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
         setLastSyncTime(nowFormatted);
 
-        // Update current record if active teacher's evaluation has arrived from another device
-        if (activeTeacher) {
+        // Update current record ONLY if user is not in the middle of active input
+        // Ini mencegah input guru yang sedang diketik tertimpa oleh data sinkronisasi latar belakang
+        if (activeTeacher && activeTab !== "input") {
           const freshRecord = getTeacherRecord(activeTeacher, freshMeta);
-          if (activeTab !== "input") {
-            setCurrentRecord(freshRecord);
-          } else {
-            setCurrentRecord(prev => {
-              if (!prev || !isRecordEvaluated(prev)) {
-                return freshRecord;
-              }
-              return prev;
-            });
-          }
+          setCurrentRecord(freshRecord);
         }
       }
     } catch (err: any) {
@@ -152,45 +144,19 @@ export default function App() {
     setIsInitialized(true);
   }, []);
 
-  // Fast automatic background synchronization every 30 seconds
-  // Menjamin data yang diisi di HP segera terbaca di Laptop dan perangkat lain
+  // Strategi Penarikan Data yang Efektif dan Aman:
+  // 1. Tidak menggunakan timer interval 30 detik (agar guru bebas menyelesaikan input tanpa terhapus)
+  // 2. Menarik data terbaru dari Spreadsheet saat berpindah ke tab "Rekap" atau "Analisis"
+  //    sehingga rekapan sekolah langsung menampilkan hasil pengisian terbaru dari HP/Laptop lain.
   useEffect(() => {
     if (!isInitialized) return;
-
-    const intervalId = setInterval(() => {
-      if (document.hidden || !navigator.onLine) return;
+    if (activeTab === "rekap" || activeTab === "analisis") {
       const syncConf = getSyncConfig();
-      if (syncConf.autoSync && syncConf.webAppUrl) {
+      if (syncConf.autoSync && syncConf.webAppUrl && !isSyncing) {
         triggerAutoSync(false);
       }
-    }, 30000); // 30 Detik
-
-    return () => clearInterval(intervalId);
-  }, [isInitialized, activeTeacher, activeTab, isSyncing]);
-
-  // Synchronize immediately when user focuses the window, tab becomes visible, or comes back online
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const handleFocusOrVisible = () => {
-      if (!document.hidden && navigator.onLine) {
-        const syncConf = getSyncConfig();
-        if (syncConf.autoSync && syncConf.webAppUrl) {
-          triggerAutoSync(false);
-        }
-      }
-    };
-
-    window.addEventListener("focus", handleFocusOrVisible);
-    document.addEventListener("visibilitychange", handleFocusOrVisible);
-    window.addEventListener("online", handleFocusOrVisible);
-
-    return () => {
-      window.removeEventListener("focus", handleFocusOrVisible);
-      document.removeEventListener("visibilitychange", handleFocusOrVisible);
-      window.removeEventListener("online", handleFocusOrVisible);
-    };
-  }, [isInitialized, activeTeacher, activeTab, isSyncing]);
+    }
+  }, [activeTab]);
 
   // When active teacher changes, load teacher record (uppercase guaranteed)
   const handleSelectTeacher = (name: string) => {
@@ -200,8 +166,11 @@ export default function App() {
     setCurrentRecord(rec);
   };
 
-  // Save record with immediate smart merge and autoSync push
-  const handleSaveRecord = (recordToSave: SupervisionRecord) => {
+  // Simpan hasil supervisi:
+  // 1. Simpan ke memori lokal browser seketika
+  // 2. Langsung kirim (push) ke Google Spreadsheet
+  // 3. Mengembalikan status sukses ke form
+  const handleSaveRecord = async (recordToSave: SupervisionRecord): Promise<{ success: boolean; cloudSuccess?: boolean; message?: string }> => {
     const upperRecord: SupervisionRecord = {
       ...recordToSave,
       name: recordToSave.name.trim().toUpperCase()
@@ -210,11 +179,28 @@ export default function App() {
     setIndex({ ...updatedIndex });
     setCurrentRecord(upperRecord);
 
-    // Immediate background push to cloud (with pre-merge protection)
     const syncConf = getSyncConfig();
     if (syncConf.autoSync && syncConf.webAppUrl) {
-      triggerAutoSync(true);
+      setIsSyncing(true);
+      try {
+        const pushRes = await pushToSpreadsheet(syncConf.webAppUrl);
+        if (pushRes.success) {
+          setIsSyncConnected(true);
+          const nowFormatted = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+          setLastSyncTime(nowFormatted);
+          setIndex(getSupervisionIndex());
+          return { success: true, cloudSuccess: true, message: "Tersimpan di perangkat & terkirim ke Spreadsheet!" };
+        } else {
+          return { success: true, cloudSuccess: false, message: pushRes.message || "Tersimpan di perangkat lokal." };
+        }
+      } catch (err: any) {
+        return { success: true, cloudSuccess: false, message: "Tersimpan di perangkat lokal." };
+      } finally {
+        setIsSyncing(false);
+      }
     }
+
+    return { success: true, cloudSuccess: false, message: "Tersimpan aman di memori perangkat." };
   };
 
   // Update school meta with autoSync push

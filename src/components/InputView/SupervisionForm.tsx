@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { SchoolMeta, ScoreValue, SectionCategory, SupervisionRecord } from "../../types";
+import { saveTeacherRecord } from "../../utils/storage";
 import { 
   SECTIONS, 
   SKOR_MAKS, 
@@ -24,7 +25,10 @@ import {
   Award,
   ExternalLink,
   FolderOpen,
-  Link as LinkIcon
+  Link as LinkIcon,
+  CloudUpload,
+  RefreshCw,
+  HardDrive
 } from "lucide-react";
 
 const formatExternalUrl = (url?: string): string => {
@@ -38,7 +42,7 @@ const formatExternalUrl = (url?: string): string => {
 interface SupervisionFormProps {
   record: SupervisionRecord;
   schoolMeta: SchoolMeta;
-  onSave: (record: SupervisionRecord) => void;
+  onSave: (record: SupervisionRecord) => Promise<any> | void;
   onPrintTeacher: (record: SupervisionRecord) => void;
 }
 
@@ -57,13 +61,37 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
   });
   const [openBukti, setOpenBukti] = useState<Record<number, boolean>>({});
   const [showRubricModal, setShowRubricModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isDraftSaved, setIsDraftSaved] = useState(false);
 
-  // Sync state when teacher prop changes
+  // Tracks the active teacher to ensure user inputs are NEVER wiped by re-renders or background syncs
+  const currentTeacherRef = useRef<string>(initialRecord.name);
+
+  // Sync state ONLY when the selected teacher actually changes
   useEffect(() => {
-    setRecord(initialRecord);
-    setSavedSuccess(false);
-  }, [initialRecord.name, initialRecord]);
+    if (initialRecord.name !== currentTeacherRef.current) {
+      currentTeacherRef.current = initialRecord.name;
+      setRecord(initialRecord);
+      setSavedSuccess(false);
+      setSaveMessage(null);
+      setIsDraftSaved(false);
+    }
+  }, [initialRecord.name]);
+
+  // Real-time Local Auto-Save (Drafting):
+  // Menjaga agar saat guru/supervisor mengetik atau memilih nilai, data tersimpan langsung di perangkat lokal (Anti-Hilang)
+  useEffect(() => {
+    if (!record || record.name !== currentTeacherRef.current) return;
+
+    const timer = setTimeout(() => {
+      saveTeacherRecord(record);
+      setIsDraftSaved(true);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [record]);
 
   const summary = calculateScoreSummary(record);
 
@@ -124,11 +152,34 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(record);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setIsSaving(true);
+    setSaveMessage(null);
+
+    try {
+      // 1. Simpan langsung ke memori lokal browser
+      saveTeacherRecord(record);
+      setSavedSuccess(true);
+
+      // 2. Kirim ke Google Spreadsheet (Push)
+      const res = await onSave(record);
+      if (res && res.cloudSuccess) {
+        setSaveMessage("Tersimpan di perangkat dan terkirim ke Google Spreadsheet!");
+      } else if (res && res.message) {
+        setSaveMessage(res.message);
+      } else {
+        setSaveMessage("Data tersimpan aman di perangkat lokal.");
+      }
+    } catch (err: any) {
+      console.warn("Form save error:", err);
+      setSaveMessage("Tersimpan di perangkat lokal.");
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => {
+        setSavedSuccess(false);
+      }, 4000);
+    }
   };
 
   const circumference = 2 * Math.PI * 34;
@@ -149,6 +200,12 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
               <span className="text-[10px] font-bold tracking-widest text-indigo-400 uppercase bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/20">
                 Instrumen Administrasi
               </span>
+              {isDraftSaved && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-neutral-800 text-neutral-300 border border-neutral-700">
+                  <HardDrive className="w-3 h-3 text-emerald-400" />
+                  <span>Draft tersimpan di perangkat</span>
+                </span>
+              )}
               {record.driveUrl && (
                 <a
                   href={formatExternalUrl(record.driveUrl)}
@@ -679,17 +736,29 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
           <div className="flex items-center gap-2.5 w-full sm:w-auto">
             <button
               type="submit"
-              className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg shadow-indigo-600/30 transition-all"
+              disabled={isSaving}
+              className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-6 py-2.5 text-white text-xs sm:text-sm font-bold rounded-xl shadow-lg transition-all ${
+                isSaving 
+                  ? "bg-indigo-700 cursor-wait opacity-80" 
+                  : savedSuccess 
+                  ? "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30" 
+                  : "bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30 active:scale-[0.99]"
+              }`}
             >
-              {savedSuccess ? (
+              {isSaving ? (
                 <>
-                  <Check className="w-4 h-4 text-emerald-300" />
-                  <span>Berhasil Disimpan!</span>
+                  <RefreshCw className="w-4 h-4 animate-spin text-indigo-300" />
+                  <span>Menyimpan & Mengirim ke Cloud...</span>
+                </>
+              ) : savedSuccess ? (
+                <>
+                  <Check className="w-4 h-4 text-white" />
+                  <span>Tersimpan & Terkirim!</span>
                 </>
               ) : (
                 <>
-                  <Save className="w-4 h-4" />
-                  <span>Simpan Hasil Supervisi</span>
+                  <CloudUpload className="w-4 h-4" />
+                  <span>Simpan & Kirim ke Spreadsheet</span>
                 </>
               )}
             </button>
@@ -704,12 +773,18 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-auto text-xs text-neutral-500">
-            {savedSuccess && (
-              <span className="text-emerald-400 font-semibold animate-pulse">
-                Data supervisi {record.name} tersimpan ke sistem.
+          <div className="flex items-center gap-2 self-end sm:self-auto text-xs text-neutral-400">
+            {saveMessage ? (
+              <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" />
+                <span>{saveMessage}</span>
               </span>
-            )}
+            ) : isDraftSaved ? (
+              <span className="text-neutral-400 flex items-center gap-1">
+                <HardDrive className="w-3.5 h-3.5 text-emerald-400/80" />
+                <span>Isian Anda otomatis tersimpan di perangkat ini (Aman).</span>
+              </span>
+            ) : null}
           </div>
         </div>
       </form>
