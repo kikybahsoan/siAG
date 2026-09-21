@@ -364,6 +364,8 @@ export default function App() {
                 onSelectTeacher={handleSelectTeacher}
                 index={index}
                 onAddTeacher={handleAddTeacher}
+                onSync={() => triggerAutoSync(false)}
+                isSyncing={isSyncing}
               />
 
               <SupervisionForm

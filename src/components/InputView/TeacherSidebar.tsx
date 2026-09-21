@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { SupervisionIndex } from "../../types";
 import { slugifyTeacher } from "../../data/supervisionData";
 import { isDummyTeacher } from "../../utils/storage";
-import { Search, UserCheck, UserX, UserPlus, Users, X, FolderCheck } from "lucide-react";
+import { Search, UserCheck, UserX, UserPlus, Users, X, FolderCheck, RefreshCw } from "lucide-react";
 
 interface TeacherSidebarProps {
   teachers: string[];
@@ -10,6 +10,8 @@ interface TeacherSidebarProps {
   onSelectTeacher: (name: string) => void;
   index: SupervisionIndex;
   onAddTeacher: (name: string) => void;
+  onSync?: () => void;
+  isSyncing?: boolean;
 }
 
 export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
@@ -17,7 +19,9 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
   activeTeacher,
   onSelectTeacher,
   index,
-  onAddTeacher
+  onAddTeacher,
+  onSync,
+  isSyncing = false
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "done" | "pending">("all");
@@ -70,14 +74,33 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
             </span>
           </div>
 
-          <button
-            onClick={() => setIsAdding(!isAdding)}
-            className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors"
-            title="Tambah guru baru"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Tambah</span>
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onSync && (
+              <button
+                type="button"
+                onClick={onSync}
+                disabled={isSyncing}
+                className={`text-[11px] font-semibold inline-flex items-center gap-1 px-2 py-1 rounded-lg border transition-all ${
+                  isSyncing 
+                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 animate-pulse cursor-wait"
+                    : "bg-neutral-800/80 text-neutral-300 hover:text-emerald-400 hover:bg-neutral-800 border-neutral-700/60"
+                }`}
+                title="Tarik data terbaru dari Google Spreadsheet / HP & Laptop lain"
+              >
+                <RefreshCw className={`w-3 h-3 ${isSyncing ? "animate-spin text-emerald-400" : ""}`} />
+                <span className="hidden sm:inline">Sinkron</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setIsAdding(!isAdding)}
+              className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors"
+              title="Tambah guru baru"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Tambah</span>
+            </button>
+          </div>
         </div>
 
         {/* Add Teacher Form */}
