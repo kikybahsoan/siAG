@@ -123,6 +123,7 @@ export default function App() {
     if (syncConf.autoSync && syncConf.webAppUrl) {
       pullFromSpreadsheet(syncConf.webAppUrl).then((res) => {
         if (res.success) {
+          cleanupLegacyDummyData();
           setIsSyncConnected(true);
           const freshMeta = getSchoolMeta();
           const freshTeachers = getTeachersList();

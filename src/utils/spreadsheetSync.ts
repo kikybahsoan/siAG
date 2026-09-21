@@ -6,9 +6,11 @@ import {
   getTeacherRecord,
   saveSchoolMeta,
   saveTeachersList,
-  saveSupervisionIndex
+  saveSupervisionIndex,
+  isDummyTeacher,
+  isDummySlug
 } from "./storage";
-import { slugifyTeacher, calculateScoreSummary, createBlankRecord } from "../data/supervisionData";
+import { slugifyTeacher, calculateScoreSummary, createBlankRecord, DEFAULT_TEACHERS } from "../data/supervisionData";
 
 export interface SyncPayload {
   version: string;
@@ -146,14 +148,23 @@ export function mergeTeacherRecord(
  * Preserves evaluations from all devices without erasing anything
  */
 export function mergeSyncPayloads(local: SyncPayload, cloud: SyncPayload): SyncPayload {
-  // 1. Teachers list: union of both lists (preserving original order and uppercase)
+  // 1. Teachers list: guarantee original 72 teachers first, then add valid custom teachers
   const teacherSet = new Set<string>();
   const mergedTeachers: string[] = [];
 
-  // Add teachers in priority: Cloud teachers first, then Local teachers
-  (cloud.teachers || []).concat(local.teachers || []).forEach(t => {
+  // Always seed with DEFAULT_TEACHERS so genuine teachers remain in priority order
+  DEFAULT_TEACHERS.forEach(t => {
+    const upper = t.trim().toUpperCase();
+    if (!teacherSet.has(upper)) {
+      teacherSet.add(upper);
+      mergedTeachers.push(upper);
+    }
+  });
+
+  // Add any valid (non-dummy) teachers from local or cloud
+  (local.teachers || []).concat(cloud.teachers || []).forEach(t => {
     const upper = String(t).trim().toUpperCase();
-    if (upper && !teacherSet.has(upper)) {
+    if (upper && !isDummyTeacher(upper) && !teacherSet.has(upper)) {
       teacherSet.add(upper);
       mergedTeachers.push(upper);
     }
@@ -184,11 +195,12 @@ export function mergeSyncPayloads(local: SyncPayload, cloud: SyncPayload): SyncP
     showLogoKanan: local.schoolMeta?.showLogoKanan ?? cloud.schoolMeta?.showLogoKanan ?? false
   };
 
-  // 3. Records & Index: smart merge per teacher
+  // 3. Records & Index: smart merge per teacher (strictly ignoring dummy teachers)
   const mergedRecords: Record<string, SupervisionRecord> = {};
   const mergedIndex: SupervisionIndex = {};
 
   mergedTeachers.forEach(teacher => {
+    if (isDummyTeacher(teacher)) return;
     const slug = slugifyTeacher(teacher);
     const localRec = local.records?.[slug] || createBlankRecord(teacher, mergedMeta.kepalaSekolah, mergedMeta.nipKepalaSekolah);
     const cloudRec = cloud.records?.[slug] || createBlankRecord(teacher, mergedMeta.kepalaSekolah, mergedMeta.nipKepalaSekolah);
@@ -233,7 +245,9 @@ export function mergeSyncPayloads(local: SyncPayload, cloud: SyncPayload): SyncP
  */
 export function buildSyncPayload(): SyncPayload {
   const schoolMeta = getSchoolMeta();
-  const teachers = getTeachersList().map(t => t.toUpperCase());
+  const teachers = getTeachersList()
+    .map(t => t.toUpperCase())
+    .filter(t => !isDummyTeacher(t));
   const index = getSupervisionIndex();
   const records: Record<string, SupervisionRecord> = {};
 
@@ -254,13 +268,37 @@ export function buildSyncPayload(): SyncPayload {
 
 /**
  * Apply a sync payload from the cloud into local storage with SMART MERGE
- * Guarantees that no local evaluation is deleted
+ * Guarantees that no local evaluation is deleted and dummy data is filtered out
  */
 export function applySyncPayload(payload: SyncPayload): SyncPayload {
   if (!payload) return buildSyncPayload();
 
+  // Pre-clean incoming payload of dummy teachers
+  const cleanPayload: SyncPayload = {
+    ...payload,
+    teachers: (payload.teachers || []).filter(t => !isDummyTeacher(t)),
+    index: {},
+    records: {}
+  };
+
+  if (payload.index) {
+    Object.keys(payload.index).forEach(k => {
+      if (!isDummySlug(k) && !isDummyTeacher(payload.index[k]?.name)) {
+        cleanPayload.index[k] = payload.index[k];
+      }
+    });
+  }
+
+  if (payload.records) {
+    Object.keys(payload.records).forEach(k => {
+      if (!isDummySlug(k) && !isDummyTeacher(payload.records[k]?.name)) {
+        cleanPayload.records[k] = payload.records[k];
+      }
+    });
+  }
+
   const currentLocal = buildSyncPayload();
-  const merged = mergeSyncPayloads(currentLocal, payload);
+  const merged = mergeSyncPayloads(currentLocal, cleanPayload);
 
   if (merged.schoolMeta) {
     saveSchoolMeta(merged.schoolMeta);
@@ -270,17 +308,28 @@ export function applySyncPayload(payload: SyncPayload): SyncPayload {
   }
   if (merged.records && typeof merged.records === "object") {
     Object.keys(merged.records).forEach(slug => {
-      const rec = merged.records[slug];
-      if (rec) {
-        if (rec.name) {
+      if (!isDummySlug(slug)) {
+        const rec = merged.records[slug];
+        if (rec && !isDummyTeacher(rec.name)) {
           rec.name = rec.name.toUpperCase();
+          localStorage.setItem(`sup_v2_rec:${slug}`, JSON.stringify(rec));
         }
-        localStorage.setItem(`sup_v2_rec:${slug}`, JSON.stringify(rec));
       }
     });
   }
   if (merged.index && typeof merged.index === "object") {
     saveSupervisionIndex(merged.index);
+  }
+
+  // Clean any lingering dummy record keys from localStorage
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i);
+    if (key && key.startsWith("sup_v2_rec:")) {
+      const slug = key.replace("sup_v2_rec:", "");
+      if (isDummySlug(slug)) {
+        localStorage.removeItem(key);
+      }
+    }
   }
 
   saveSyncConfig({ lastSyncTime: new Date().toISOString() });
@@ -584,7 +633,7 @@ function doPost(e) {
 
       // Gabungkan data masuk dengan data lama agar tidak menghapus hasil isian device lain
       var finalPayload = incomingPayload;
-      if (existingPayload && existingPayload.records) {
+      if (!data.forceClean && action !== "replace" && existingPayload && existingPayload.records) {
         finalPayload = serverMergePayloads(existingPayload, incomingPayload);
       }
 
@@ -620,13 +669,19 @@ function serverMergePayloads(existing, incoming) {
   if (!existing) return incoming;
   if (!incoming) return existing;
 
-  // 1. Gabungkan daftar guru (Union)
+  // 1. Gabungkan daftar guru (Union) tanpa data dummy (GURU 1..N)
+  function isDummyT(name) {
+    if (!name) return false;
+    var str = String(name).trim().toUpperCase();
+    return /^GURU[\s\-_]*\d+/i.test(str) || /^GURU\s+[IVXLCDM]+/i.test(str) || str === "GURU" || str === "DUMMY";
+  }
+
   var teacherMap = {};
   var mergedTeachers = [];
   var allTeachers = (existing.teachers || []).concat(incoming.teachers || []);
   for (var i = 0; i < allTeachers.length; i++) {
     var t = String(allTeachers[i]).trim().toUpperCase();
-    if (t && !teacherMap[t]) {
+    if (t && !isDummyT(t) && !teacherMap[t]) {
       teacherMap[t] = true;
       mergedTeachers.push(t);
     }

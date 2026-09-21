@@ -31,13 +31,40 @@ export function saveSchoolMeta(meta: SchoolMeta): void {
   }
 }
 
+/**
+ * Detection for dummy placeholder teachers like "GURU 1", "GURU 2", "GURU-1", etc.
+ */
+export function isDummyTeacher(name?: string | null): boolean {
+  if (!name) return false;
+  const trimmed = String(name).trim().toUpperCase();
+  // Matches "GURU 1", "GURU 2", "GURU 01", "GURU-1", "GURU_1", "GURU1", etc.
+  if (/^GURU[\s\-_]*\d+/i.test(trimmed)) return true;
+  if (/^GURU\s+[IVXLCDM]+/i.test(trimmed)) return true;
+  if (trimmed === "GURU" || trimmed === "GURU BARU" || trimmed === "DUMMY" || trimmed === "SAMPLE") return true;
+  return false;
+}
+
+export function isDummySlug(slug?: string | null): boolean {
+  if (!slug) return false;
+  const s = String(slug).trim().toLowerCase();
+  if (/^guru[\-_]?\d+/i.test(s)) return true;
+  if (/^guru[\-_]?[ivxlcdm]+/i.test(s)) return true;
+  if (s === "guru" || s === "guru-baru" || s === "dummy" || s === "sample") return true;
+  return false;
+}
+
 export function getTeachersList(): string[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.TEACHERS_LIST);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((t: string) => String(t).toUpperCase());
+        const cleaned = parsed
+          .map((t: string) => String(t).toUpperCase().trim())
+          .filter(t => t && !isDummyTeacher(t));
+        if (cleaned.length > 0) {
+          return cleaned;
+        }
       }
     }
   } catch (err) {
@@ -51,8 +78,11 @@ export function getTeachersList(): string[] {
 
 export function saveTeachersList(list: string[]): void {
   try {
-    const upperList = list.map(t => String(t).trim().toUpperCase());
-    localStorage.setItem(STORAGE_KEYS.TEACHERS_LIST, JSON.stringify(upperList));
+    const upperList = list
+      .map(t => String(t).trim().toUpperCase())
+      .filter(t => t && !isDummyTeacher(t));
+    const finalList = upperList.length > 0 ? upperList : DEFAULT_TEACHERS.map(t => t.toUpperCase());
+    localStorage.setItem(STORAGE_KEYS.TEACHERS_LIST, JSON.stringify(finalList));
   } catch (err) {
     console.error("Failed to save teachers list to localStorage", err);
   }
@@ -62,7 +92,14 @@ export function getSupervisionIndex(): SupervisionIndex {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.INDEX);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      const cleaned: SupervisionIndex = {};
+      Object.keys(parsed).forEach(k => {
+        if (!isDummySlug(k) && !isDummyTeacher(parsed[k]?.name)) {
+          cleaned[k] = parsed[k];
+        }
+      });
+      return cleaned;
     }
   } catch (err) {
     console.warn("Failed to load supervision index from localStorage", err);
@@ -72,7 +109,13 @@ export function getSupervisionIndex(): SupervisionIndex {
 
 export function saveSupervisionIndex(index: SupervisionIndex): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.INDEX, JSON.stringify(index));
+    const cleaned: SupervisionIndex = {};
+    Object.keys(index).forEach(k => {
+      if (!isDummySlug(k) && !isDummyTeacher(index[k]?.name)) {
+        cleaned[k] = index[k];
+      }
+    });
+    localStorage.setItem(STORAGE_KEYS.INDEX, JSON.stringify(cleaned));
   } catch (err) {
     console.error("Failed to save supervision index to localStorage", err);
   }
@@ -221,34 +264,137 @@ export function resetAllDataToDefault(): void {
     saveSchoolMeta(DEFAULT_SCHOOL_META);
     saveTeachersList(DEFAULT_TEACHERS);
     saveSupervisionIndex({});
+    restoreCsvSeedData(true);
   } catch (err) {
     console.error("Failed to reset data", err);
+  }
+}
+
+/**
+ * Purges all dummy placeholder teachers (like GURU 1..N) from localStorage, index, and records,
+ * and restores the verified 72 teachers of SMKN 2 Gorontalo with their authentic evaluation records.
+ */
+export function purgeDummyDataAndRestoreOriginalTeachers(): { teachers: string[]; index: SupervisionIndex } {
+  try {
+    // 1. Remove all dummy records from localStorage keys
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(STORAGE_KEYS.RECORD_PREFIX)) {
+        const slug = key.replace(STORAGE_KEYS.RECORD_PREFIX, "");
+        if (isDummySlug(slug)) {
+          keysToRemove.push(key);
+        } else {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const rec = JSON.parse(raw);
+              if (isDummyTeacher(rec?.name)) {
+                keysToRemove.push(key);
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
+
+    // 2. Clear out dummy entries from index
+    const rawIndex = localStorage.getItem(STORAGE_KEYS.INDEX);
+    const cleanIndex: SupervisionIndex = {};
+    if (rawIndex) {
+      try {
+        const parsed = JSON.parse(rawIndex);
+        Object.keys(parsed).forEach(k => {
+          if (!isDummySlug(k) && !isDummyTeacher(parsed[k]?.name)) {
+            cleanIndex[k] = parsed[k];
+          }
+        });
+      } catch (e) {}
+    }
+    localStorage.setItem(STORAGE_KEYS.INDEX, JSON.stringify(cleanIndex));
+
+    // 3. Reset teachers list strictly to DEFAULT_TEACHERS (the 72 verified original teachers)
+    const upperDefault = DEFAULT_TEACHERS.map(t => t.toUpperCase());
+    localStorage.setItem(STORAGE_KEYS.TEACHERS_LIST, JSON.stringify(upperDefault));
+
+    // 4. Restore the verified seed evaluations from SMKN 2 Gorontalo for the 72 teachers
+    restoreCsvSeedData(true);
+
+    return {
+      teachers: getTeachersList(),
+      index: getSupervisionIndex()
+    };
+  } catch (err) {
+    console.error("Failed to purge dummy data and restore original teachers", err);
+    return { teachers: DEFAULT_TEACHERS.map(t => t.toUpperCase()), index: {} };
   }
 }
 
 // Auto cleanup legacy sample records if any existed from previous demonstration and ensure uppercase teachers
 export function cleanupLegacyDummyData(): void {
   try {
-    // Ensure all stored teachers are uppercase
+    // Check if any dummy teachers exist in localStorage
+    let hasDummy = false;
     const rawTeachers = localStorage.getItem(STORAGE_KEYS.TEACHERS_LIST);
     if (rawTeachers) {
       try {
         const list = JSON.parse(rawTeachers);
+        if (Array.isArray(list) && list.some(t => isDummyTeacher(t))) {
+          hasDummy = true;
+        }
+      } catch (e) {}
+    }
+
+    const rawIndex = localStorage.getItem(STORAGE_KEYS.INDEX);
+    if (rawIndex) {
+      try {
+        const parsed = JSON.parse(rawIndex);
+        if (Object.keys(parsed).some(k => isDummySlug(k) || isDummyTeacher(parsed[k]?.name))) {
+          hasDummy = true;
+        }
+      } catch (e) {}
+    }
+
+    // Also check if any record key is dummy
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(STORAGE_KEYS.RECORD_PREFIX)) {
+        const slug = k.replace(STORAGE_KEYS.RECORD_PREFIX, "");
+        if (isDummySlug(slug)) {
+          hasDummy = true;
+          break;
+        }
+      }
+    }
+
+    if (hasDummy) {
+      console.log("[Storage] Dummy teachers detected. Purging dummy data and restoring original 72 teachers...");
+      purgeDummyDataAndRestoreOriginalTeachers();
+      return;
+    }
+
+    // Ensure all stored teachers are uppercase
+    if (rawTeachers) {
+      try {
+        const list = JSON.parse(rawTeachers);
         if (Array.isArray(list) && list.length > 0) {
-          const upperList = list.map(t => String(t).trim().toUpperCase());
+          const upperList = list.map(t => String(t).trim().toUpperCase()).filter(t => !isDummyTeacher(t));
           localStorage.setItem(STORAGE_KEYS.TEACHERS_LIST, JSON.stringify(upperList));
         }
       } catch (e) {}
     }
 
     // Ensure all index entries have uppercase names
-    const rawIndex = localStorage.getItem(STORAGE_KEYS.INDEX);
     if (rawIndex) {
       try {
         const parsed = JSON.parse(rawIndex);
         let changed = false;
         Object.keys(parsed).forEach(k => {
-          if (parsed[k]?.name && parsed[k].name !== parsed[k].name.toUpperCase()) {
+          if (isDummySlug(k) || isDummyTeacher(parsed[k]?.name)) {
+            delete parsed[k];
+            changed = true;
+          } else if (parsed[k]?.name && parsed[k].name !== parsed[k].name.toUpperCase()) {
             parsed[k].name = parsed[k].name.toUpperCase();
             changed = true;
           }
@@ -270,7 +416,7 @@ export function cleanupLegacyDummyData(): void {
 }
 
 /**
- * Restores the complete CSV dataset (72 teachers and all 18 evaluated records)
+ * Restores the complete CSV dataset (72 teachers and all 22 evaluated records)
  * If force is false, it only populates records that are empty or missing, never overwriting existing evaluations.
  */
 export function restoreCsvSeedData(force = false): number {
@@ -298,19 +444,19 @@ export function restoreCsvSeedData(force = false): number {
     };
     saveSchoolMeta(updatedMeta);
 
-    // 2. Ensure all 72 teachers exist
+    // 2. Ensure all 72 teachers exist (strictly excluding dummy teachers)
     const teacherSet = new Set<string>();
     const mergedTeachers: string[] = [];
-    currentTeachers.forEach(t => {
+    dataset.teachers.forEach(t => {
       const u = t.trim().toUpperCase();
-      if (u && !teacherSet.has(u)) {
+      if (!isDummyTeacher(u) && !teacherSet.has(u)) {
         teacherSet.add(u);
         mergedTeachers.push(u);
       }
     });
-    dataset.teachers.forEach(t => {
+    currentTeachers.forEach(t => {
       const u = t.trim().toUpperCase();
-      if (u && !teacherSet.has(u)) {
+      if (!isDummyTeacher(u) && !teacherSet.has(u)) {
         teacherSet.add(u);
         mergedTeachers.push(u);
       }
@@ -319,9 +465,16 @@ export function restoreCsvSeedData(force = false): number {
 
     // 3. Restore records and index
     let restoredCount = 0;
-    const newIndex: SupervisionIndex = { ...currentIndex };
+    const newIndex: SupervisionIndex = {};
+    // Only keep non-dummy entries from currentIndex
+    Object.keys(currentIndex).forEach(k => {
+      if (!isDummySlug(k) && !isDummyTeacher(currentIndex[k]?.name)) {
+        newIndex[k] = currentIndex[k];
+      }
+    });
 
     dataset.teachers.forEach(teacher => {
+      if (isDummyTeacher(teacher)) return;
       const slug = slugifyTeacher(teacher);
       const seedRec = dataset.records[slug];
       if (!seedRec) return;
@@ -370,6 +523,26 @@ export function restoreCsvSeedData(force = false): number {
   } catch (err) {
     console.error("Failed to restore CSV seed data", err);
     return 0;
+  }
+}
+
+/**
+ * Fully deletes a single teacher and their evaluation record
+ */
+export function deleteTeacherEntirely(teacherName: string): { teachers: string[]; index: SupervisionIndex } {
+  const upperName = teacherName.trim().toUpperCase();
+  const slug = slugifyTeacher(upperName);
+  try {
+    localStorage.removeItem(STORAGE_KEYS.RECORD_PREFIX + slug);
+    const index = getSupervisionIndex();
+    delete index[slug];
+    saveSupervisionIndex(index);
+    const teachers = getTeachersList().filter(t => t !== upperName);
+    saveTeachersList(teachers);
+    return { teachers, index };
+  } catch (err) {
+    console.error(`Failed to delete teacher ${upperName}`, err);
+    return { teachers: getTeachersList(), index: getSupervisionIndex() };
   }
 }
 

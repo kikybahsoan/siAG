@@ -12,7 +12,8 @@ import {
   exportAllDataAsJSON, 
   importDataFromJSON, 
   resetAllDataToDefault,
-  clearAllSupervisionRecords 
+  clearAllSupervisionRecords,
+  purgeDummyDataAndRestoreOriginalTeachers
 } from "../utils/storage";
 
 interface BackupModalProps {
@@ -75,6 +76,15 @@ export const BackupModal: React.FC<BackupModalProps> = ({
     if (window.confirm("Hapus seluruh nilai dan riwayat supervisi yang ada? (Daftar nama guru akan tetap tersimpan).")) {
       clearAllSupervisionRecords();
       setImportStatus("Semua nilai supervisi berhasil dibersihkan! Status semua guru kembali 'Belum Disupervisi'.");
+      setIsSuccess(true);
+      onDataRestored();
+    }
+  };
+
+  const handlePurgeDummy = () => {
+    if (window.confirm("Hapus seluruh data dummy (GURU 1..N) dan pulihkan 72 nama guru asli SMKN 2 Gorontalo beserta riwayatnya?")) {
+      purgeDummyDataAndRestoreOriginalTeachers();
+      setImportStatus("Data dummy berhasil dibersihkan! 72 nama guru asli SMKN 2 Gorontalo telah ditampilkan.");
       setIsSuccess(true);
       onDataRestored();
     }
@@ -172,6 +182,26 @@ export const BackupModal: React.FC<BackupModalProps> = ({
                 className="hidden"
               />
             </label>
+          </div>
+
+          {/* Purge Dummy Data Section */}
+          <div className="bg-emerald-950/20 p-4 rounded-2xl border border-emerald-500/20 space-y-2">
+            <div className="font-bold text-emerald-300 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-emerald-400" />
+                <span>3. Bersihkan Data Dummy & Tampilkan 72 Guru</span>
+              </span>
+            </div>
+            <p className="text-neutral-400 text-[11px] leading-relaxed">
+              Hapus seluruh data dummy (GURU 1..N) dan tampilkan kembali 72 nama guru asli SMKN 2 Gorontalo sebelumnya.
+            </p>
+            <button
+              onClick={handlePurgeDummy}
+              className="w-full mt-1 py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all shadow-md shadow-emerald-600/20 inline-flex items-center justify-center gap-2 text-xs"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Bersihkan Data Dummy & Tampilkan Guru Sebelumnya</span>
+            </button>
           </div>
 
           {/* Reset buttons & footer */}

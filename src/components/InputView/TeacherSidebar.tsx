@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { SupervisionIndex } from "../../types";
 import { slugifyTeacher } from "../../data/supervisionData";
+import { isDummyTeacher } from "../../utils/storage";
 import { Search, UserCheck, UserX, UserPlus, Users, X, FolderCheck } from "lucide-react";
 
 interface TeacherSidebarProps {
@@ -23,8 +24,12 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
   const [isAdding, setIsAdding] = useState(false);
   const [newTeacherName, setNewTeacherName] = useState("");
 
+  const validTeachers = useMemo(() => {
+    return teachers.filter(t => !isDummyTeacher(t));
+  }, [teachers]);
+
   const filteredTeachers = useMemo(() => {
-    return teachers.filter((teacher) => {
+    return validTeachers.filter((teacher) => {
       const matchesSearch = teacher.toLowerCase().includes(searchTerm.toLowerCase());
       const slug = slugifyTeacher(teacher);
       const isDone = !!index[slug];
@@ -34,11 +39,11 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
       if (filterMode === "pending") return !isDone;
       return true;
     });
-  }, [teachers, searchTerm, filterMode, index]);
+  }, [validTeachers, searchTerm, filterMode, index]);
 
   const doneCount = useMemo(() => {
-    return teachers.filter(t => !!index[slugifyTeacher(t)]).length;
-  }, [teachers, index]);
+    return validTeachers.filter(t => !!index[slugifyTeacher(t)]).length;
+  }, [validTeachers, index]);
 
   const handleCreateTeacher = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,7 +66,7 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
               Daftar Guru
             </span>
             <span className="text-[10px] font-mono text-neutral-400 bg-neutral-800 px-1.5 py-0.5 rounded-md font-semibold">
-              {teachers.length}
+              {validTeachers.length}
             </span>
           </div>
 
@@ -259,7 +264,7 @@ export const TeacherSidebar: React.FC<TeacherSidebarProps> = ({
       <div className="p-3.5 border-t border-neutral-800 bg-neutral-950/60 text-[11px] text-neutral-400 flex items-center justify-between">
         <span className="text-[10px] uppercase tracking-wider font-bold text-neutral-500">Progress</span>
         <span className="font-mono font-bold text-neutral-200">
-          {doneCount} / {teachers.length} ({Math.round((doneCount / (teachers.length || 1)) * 100)}%)
+          {doneCount} / {validTeachers.length} ({Math.round((doneCount / (validTeachers.length || 1)) * 100)}%)
         </span>
       </div>
     </aside>
