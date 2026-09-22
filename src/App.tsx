@@ -56,10 +56,13 @@ export default function App() {
   const [pendingAdminTarget, setPendingAdminTarget] = useState<"sync" | "backup" | null>(null);
   const [adminActionTitle, setAdminActionTitle] = useState<string>("Akses Menu Administrator");
 
-  // Core Smart Sync: Pulls or pushes with two-way merging (Anti-Hapus)
-  const triggerAutoSync = async (forcePush = false) => {
+  // Manual Sync: Dipanggil HANYA saat guru/supervisor itu sendiri yang mengklik tombol "Sinkron"
+  const triggerManualSync = async (forcePush = false) => {
     const syncConf = getSyncConfig();
-    if (!syncConf.webAppUrl || !syncConf.webAppUrl.includes("/exec")) return;
+    if (!syncConf.webAppUrl || !syncConf.webAppUrl.includes("/exec")) {
+      setIsSyncModalOpen(true);
+      return;
+    }
     if (isSyncing) return;
 
     setIsSyncing(true);
@@ -81,15 +84,14 @@ export default function App() {
         const nowFormatted = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
         setLastSyncTime(nowFormatted);
 
-        // Update current record ONLY if user is not in the middle of active input
-        // Ini mencegah input guru yang sedang diketik tertimpa oleh data sinkronisasi latar belakang
-        if (activeTeacher && activeTab !== "input") {
+        // Jika guru yang aktif ada di list, muat record terbarunya
+        if (activeTeacher) {
           const freshRecord = getTeacherRecord(activeTeacher, freshMeta);
           setCurrentRecord(freshRecord);
         }
       }
     } catch (err: any) {
-      console.warn("Auto-sync notice:", err?.message || err);
+      console.warn("Manual sync notice:", err?.message || err);
     } finally {
       setIsSyncing(false);
     }
@@ -119,73 +121,40 @@ export default function App() {
     const connected = !!syncConf.webAppUrl && syncConf.webAppUrl.includes("/exec");
     setIsSyncConnected(connected);
 
-    // Initial pull on startup to fetch other devices' progress
-    if (syncConf.autoSync && syncConf.webAppUrl) {
-      pullFromSpreadsheet(syncConf.webAppUrl).then((res) => {
-        if (res.success) {
-          cleanupLegacyDummyData();
-          setIsSyncConnected(true);
-          const freshMeta = getSchoolMeta();
-          const freshTeachers = getTeachersList();
-          const freshIndex = getSupervisionIndex();
-          setSchoolMeta(freshMeta);
-          setTeachers(freshTeachers);
-          setIndex(freshIndex);
-          if (firstTeacher) {
-            const freshRec = getTeacherRecord(firstTeacher, freshMeta);
-            setCurrentRecord(freshRec);
+    // 1. RELOAD AWAL: Membaca data terakhir yang diupdate dari Google Spreadsheet
+    if (syncConf.webAppUrl && syncConf.webAppUrl.includes("/exec")) {
+      setIsSyncing(true);
+      pullFromSpreadsheet(syncConf.webAppUrl)
+        .then((res) => {
+          if (res.success) {
+            cleanupLegacyDummyData();
+            setIsSyncConnected(true);
+            const freshMeta = getSchoolMeta();
+            const freshTeachers = getTeachersList();
+            const freshIndex = getSupervisionIndex();
+            setSchoolMeta(freshMeta);
+            setTeachers(freshTeachers);
+            setIndex(freshIndex);
+
+            // Perbarui record guru aktif dengan data terbaru yang ditarik dari spreadsheet
+            const targetTeacher = firstTeacher || freshTeachers[0] || "";
+            if (targetTeacher) {
+              const freshRec = getTeacherRecord(targetTeacher, freshMeta);
+              setCurrentRecord(freshRec);
+            }
+            setLastSyncTime(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
           }
-          setLastSyncTime(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
-        }
-      }).catch((err) => {
-        console.warn("Initial sync notice:", err?.message || err);
-      });
+        })
+        .catch((err) => {
+          console.warn("Initial reload spreadsheet sync notice:", err?.message || err);
+        })
+        .finally(() => {
+          setIsSyncing(false);
+        });
     }
 
     setIsInitialized(true);
   }, []);
-
-  // Strategi Penarikan Data yang Efektif dan Aman:
-  // 1. Tidak menggunakan timer interval 30 detik (agar guru bebas menyelesaikan input tanpa terhapus)
-  // 2. Menarik data terbaru dari Spreadsheet saat:
-  //    - Berpindah ke tab "Rekap" atau "Analisis"
-  //    - Kembali membuka tab / jendela browser di HP/Laptop (window focus & visibility)
-  //    - Polling periodik (setiap 30 detik) saat tab aktif sehingga device lain langsung melihat hasil update
-  useEffect(() => {
-    if (!isInitialized) return;
-
-    const pullLatest = () => {
-      const syncConf = getSyncConfig();
-      if (syncConf.autoSync && syncConf.webAppUrl && !isSyncing) {
-        triggerAutoSync(false);
-      }
-    };
-
-    if (activeTab === "rekap" || activeTab === "analisis") {
-      pullLatest();
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        pullLatest();
-      }
-    };
-
-    window.addEventListener("focus", pullLatest);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    const pollingInterval = setInterval(() => {
-      if (document.visibilityState === "visible") {
-        pullLatest();
-      }
-    }, 30000);
-
-    return () => {
-      window.removeEventListener("focus", pullLatest);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      clearInterval(pollingInterval);
-    };
-  }, [isInitialized, activeTab, isSyncing, activeTeacher]);
 
   // When active teacher changes, load teacher record (uppercase guaranteed)
   const handleSelectTeacher = (name: string) => {
@@ -197,7 +166,7 @@ export default function App() {
 
   // Simpan hasil supervisi:
   // 1. Simpan ke memori lokal browser seketika
-  // 2. Langsung kirim (push) ke Google Spreadsheet dengan prioritas data guru ini
+  // 2. Saat guru mengirim data, aplikasi otomatis tersinkron ke Google Spreadsheet
   // 3. Mengembalikan status sukses ke form
   const handleSaveRecord = async (recordToSave: SupervisionRecord): Promise<{ success: boolean; cloudSuccess?: boolean; message?: string }> => {
     const upperRecord: SupervisionRecord = {
@@ -210,7 +179,8 @@ export default function App() {
     setCurrentRecord(upperRecord);
 
     const syncConf = getSyncConfig();
-    if (syncConf.autoSync && syncConf.webAppUrl) {
+    // Otomatis tersinkron ke Google Spreadsheet saat guru mengirimkan data
+    if (syncConf.webAppUrl && syncConf.webAppUrl.includes("/exec")) {
       setIsSyncing(true);
       try {
         const pushRes = await pushToSpreadsheet(syncConf.webAppUrl, upperRecord);
@@ -222,7 +192,7 @@ export default function App() {
           return { 
             success: true, 
             cloudSuccess: true, 
-            message: pushRes.message || "Tersimpan di perangkat & terkirim ke Google Spreadsheet!" 
+            message: pushRes.message || "Tersimpan di perangkat & tersinkron otomatis ke Google Spreadsheet!" 
           };
         } else {
           return { 
@@ -373,12 +343,7 @@ export default function App() {
           {/* Top Header & School Details Bento Card */}
           <Header
             activeTab={activeTab}
-            onTabChange={(tab) => {
-              setActiveTab(tab);
-              if (tab !== "input") {
-                triggerAutoSync(false);
-              }
-            }}
+            onTabChange={(tab) => setActiveTab(tab)}
             schoolMeta={schoolMeta}
             onUpdateSchoolMeta={handleUpdateSchoolMeta}
             onOpenBackupModal={handleOpenBackupWithAuth}
@@ -387,7 +352,7 @@ export default function App() {
             isSyncConnected={isSyncConnected}
             isSyncing={isSyncing}
             lastSyncTime={lastSyncTime}
-            onQuickSync={() => triggerAutoSync(false)}
+            onQuickSync={() => triggerManualSync(false)}
             totalTeachers={teachers.length}
             completedCount={completedCount}
           />
@@ -401,7 +366,7 @@ export default function App() {
                 onSelectTeacher={handleSelectTeacher}
                 index={index}
                 onAddTeacher={handleAddTeacher}
-                onSync={() => triggerAutoSync(false)}
+                onSync={() => triggerManualSync(false)}
                 isSyncing={isSyncing}
               />
 

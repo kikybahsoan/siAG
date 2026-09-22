@@ -66,27 +66,19 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isDraftSaved, setIsDraftSaved] = useState(false);
 
-  // Tracks active teacher and timestamp to ensure form updates when other devices edit
+  // Tracks active teacher to ensure form inputs are NEVER wiped or disturbed while typing
   const currentTeacherRef = useRef<string>(initialRecord.name);
-  const lastUpdatedAtRef = useRef<string>(initialRecord.updatedAt || "");
 
-  // Sync state when selected teacher changes OR incoming initialRecord has newer timestamp from cloud sync
+  // Sync state ONLY when selected teacher actually changes in the sidebar
   useEffect(() => {
-    const isTeacherChanged = initialRecord.name !== currentTeacherRef.current;
-    const isCloudUpdate = initialRecord.updatedAt && initialRecord.updatedAt !== lastUpdatedAtRef.current;
-
-    if (isTeacherChanged) {
+    if (initialRecord.name !== currentTeacherRef.current) {
       currentTeacherRef.current = initialRecord.name;
-      lastUpdatedAtRef.current = initialRecord.updatedAt || "";
       setRecord(initialRecord);
       setSavedSuccess(false);
       setSaveMessage(null);
       setIsDraftSaved(false);
-    } else if (isCloudUpdate && !isSaving) {
-      lastUpdatedAtRef.current = initialRecord.updatedAt || "";
-      setRecord(initialRecord);
     }
-  }, [initialRecord.name, initialRecord.updatedAt, isSaving]);
+  }, [initialRecord.name]);
 
   // Real-time Local Auto-Save (Drafting):
   // Menjaga agar saat guru/supervisor mengetik atau memilih nilai, data tersimpan langsung di perangkat lokal (Anti-Hilang)
@@ -174,7 +166,6 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
       };
 
       // 1. Simpan langsung ke memori lokal browser seketika
-      lastUpdatedAtRef.current = nowIso;
       setRecord(upperRecord);
       saveTeacherRecord(upperRecord);
       setSavedSuccess(true);
