@@ -147,17 +147,45 @@ export default function App() {
 
   // Strategi Penarikan Data yang Efektif dan Aman:
   // 1. Tidak menggunakan timer interval 30 detik (agar guru bebas menyelesaikan input tanpa terhapus)
-  // 2. Menarik data terbaru dari Spreadsheet saat berpindah ke tab "Rekap" atau "Analisis"
-  //    sehingga rekapan sekolah langsung menampilkan hasil pengisian terbaru dari HP/Laptop lain.
+  // 2. Menarik data terbaru dari Spreadsheet saat:
+  //    - Berpindah ke tab "Rekap" atau "Analisis"
+  //    - Kembali membuka tab / jendela browser di HP/Laptop (window focus & visibility)
+  //    - Polling periodik (setiap 30 detik) saat tab aktif sehingga device lain langsung melihat hasil update
   useEffect(() => {
     if (!isInitialized) return;
-    if (activeTab === "rekap" || activeTab === "analisis") {
+
+    const pullLatest = () => {
       const syncConf = getSyncConfig();
       if (syncConf.autoSync && syncConf.webAppUrl && !isSyncing) {
         triggerAutoSync(false);
       }
+    };
+
+    if (activeTab === "rekap" || activeTab === "analisis") {
+      pullLatest();
     }
-  }, [activeTab]);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        pullLatest();
+      }
+    };
+
+    window.addEventListener("focus", pullLatest);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    const pollingInterval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        pullLatest();
+      }
+    }, 30000);
+
+    return () => {
+      window.removeEventListener("focus", pullLatest);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      clearInterval(pollingInterval);
+    };
+  }, [isInitialized, activeTab, isSyncing, activeTeacher]);
 
   // When active teacher changes, load teacher record (uppercase guaranteed)
   const handleSelectTeacher = (name: string) => {
@@ -169,12 +197,13 @@ export default function App() {
 
   // Simpan hasil supervisi:
   // 1. Simpan ke memori lokal browser seketika
-  // 2. Langsung kirim (push) ke Google Spreadsheet
+  // 2. Langsung kirim (push) ke Google Spreadsheet dengan prioritas data guru ini
   // 3. Mengembalikan status sukses ke form
   const handleSaveRecord = async (recordToSave: SupervisionRecord): Promise<{ success: boolean; cloudSuccess?: boolean; message?: string }> => {
     const upperRecord: SupervisionRecord = {
       ...recordToSave,
-      name: recordToSave.name.trim().toUpperCase()
+      name: recordToSave.name.trim().toUpperCase(),
+      updatedAt: recordToSave.updatedAt || new Date().toISOString()
     };
     const updatedIndex = saveTeacherRecord(upperRecord);
     setIndex({ ...updatedIndex });
@@ -184,15 +213,23 @@ export default function App() {
     if (syncConf.autoSync && syncConf.webAppUrl) {
       setIsSyncing(true);
       try {
-        const pushRes = await pushToSpreadsheet(syncConf.webAppUrl);
+        const pushRes = await pushToSpreadsheet(syncConf.webAppUrl, upperRecord);
         if (pushRes.success) {
           setIsSyncConnected(true);
           const nowFormatted = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
           setLastSyncTime(nowFormatted);
           setIndex(getSupervisionIndex());
-          return { success: true, cloudSuccess: true, message: "Tersimpan di perangkat & terkirim ke Spreadsheet!" };
+          return { 
+            success: true, 
+            cloudSuccess: true, 
+            message: pushRes.message || "Tersimpan di perangkat & terkirim ke Google Spreadsheet!" 
+          };
         } else {
-          return { success: true, cloudSuccess: false, message: pushRes.message || "Tersimpan di perangkat lokal." };
+          return { 
+            success: true, 
+            cloudSuccess: false, 
+            message: pushRes.message || "Tersimpan di perangkat lokal." 
+          };
         }
       } catch (err: any) {
         return { success: true, cloudSuccess: false, message: "Tersimpan di perangkat lokal." };

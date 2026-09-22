@@ -7,6 +7,7 @@ import {
   saveSchoolMeta,
   saveTeachersList,
   saveSupervisionIndex,
+  saveTeacherRecord,
   isDummyTeacher,
   isDummySlug
 } from "./storage";
@@ -491,19 +492,37 @@ let isPushPullInProgress = false;
 /**
  * Push local data to Google Spreadsheet with Two-Way Pre-Merge (Anti-Delete)
  * Automatically merges with cloud data and ensures all device changes are preserved!
+ * Supports optional specificRecord to immediately prioritize saving a newly edited teacher.
  */
-export async function pushToSpreadsheet(webAppUrl?: string): Promise<{ success: boolean; message: string; payload?: SyncPayload }> {
+export async function pushToSpreadsheet(
+  webAppUrl?: string,
+  specificRecord?: SupervisionRecord
+): Promise<{ success: boolean; message: string; payload?: SyncPayload }> {
   const url = webAppUrl || getSyncConfig().webAppUrl;
   if (!url) {
     return { success: false, message: "URL Web App belum diatur." };
   }
 
+  // If a push/pull is already running and this is a specific user save action, wait briefly
   if (isPushPullInProgress) {
-    return { success: true, message: "Sinkronisasi sedang berjalan di latar belakang..." };
+    if (specificRecord) {
+      let waitCount = 0;
+      while (isPushPullInProgress && waitCount < 10) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        waitCount++;
+      }
+    } else {
+      return { success: true, message: "Sinkronisasi sedang berjalan di latar belakang..." };
+    }
   }
 
   isPushPullInProgress = true;
   try {
+    // If specificRecord provided, ensure it is saved in local storage first
+    if (specificRecord) {
+      saveTeacherRecord(specificRecord);
+    }
+
     // 1. Fast optional pre-pull (Max 3.5s timeout) to merge latest changes from other devices locally
     let payloadToPush = buildSyncPayload();
     try {
@@ -519,9 +538,39 @@ export async function pushToSpreadsheet(webAppUrl?: string): Promise<{ success: 
       console.warn("Pre-push cloud pull skipped (Apps Script will perform server-side merge):", pullErr);
     }
 
+    // Re-verify that specificRecord is present with highest priority in payload
+    if (specificRecord) {
+      const upperName = specificRecord.name.trim().toUpperCase();
+      const slug = slugifyTeacher(upperName);
+      if (!payloadToPush.records) payloadToPush.records = {};
+      payloadToPush.records[slug] = {
+        ...specificRecord,
+        name: upperName,
+        updatedAt: specificRecord.updatedAt || new Date().toISOString()
+      };
+
+      const summary = calculateScoreSummary(payloadToPush.records[slug]);
+      if (!payloadToPush.index) payloadToPush.index = {};
+      if (summary.count > 0 || specificRecord.driveUrl) {
+        payloadToPush.index[slug] = {
+          name: upperName,
+          nip: specificRecord.nip || "",
+          mapel: specificRecord.mapel || "",
+          driveUrl: specificRecord.driveUrl || "",
+          total: summary.count > 0 ? summary.total : null,
+          count: summary.count,
+          percentage: summary.count > 0 ? summary.percentage : null,
+          predikatCls: summary.count > 0 ? summary.predikat.cls : "z",
+          predikatLabel: summary.count > 0 ? summary.predikat.label : "Belum Disupervisi",
+          updatedAt: payloadToPush.records[slug].updatedAt || new Date().toISOString()
+        };
+      }
+    }
+
     // 2. Send the combined merged payload to Google Apps Script
     const bodyData = JSON.stringify({
       action: "push",
+      currentRecord: specificRecord || null,
       payload: payloadToPush
     });
 
@@ -617,8 +666,10 @@ export async function pullFromSpreadsheet(webAppUrl?: string): Promise<{ success
 export const GOOGLE_APPS_SCRIPT_CODE = `/**
  * =========================================================================
  * GOOGLE APPS SCRIPT: DATABASE SUPERVISI ADMINISTRASI GURU
- * Fitur: Smart Merge Multi-Device (Anti-Hapus Data Perangkat Lain)
- * SMKN 2 GORONTALO &bull; Kurikulum Merdeka
+ * Fitur: Row-Based Storage (Anti-Limit 50.000 Karakter)
+ *        Spreadsheet Data Protection (Anti-Hapus Data Terisi)
+ *        Multi-Device Realtime Sync
+ * SMKN 2 GORONTALO • Kurikulum Merdeka
  * =========================================================================
  */
 
@@ -638,8 +689,8 @@ function doGet(e) {
     }
 
     if (action === "pull" || action === "get") {
-      var syncSheet = ss.getSheetByName("Database_Sync");
-      if (!syncSheet) {
+      var payload = readDatabaseFromSheet(ss);
+      if (!payload || !payload.teachers || payload.teachers.length === 0) {
         return respondJson({
           status: "empty",
           message: "Database belum memiliki data tersimpan.",
@@ -647,16 +698,6 @@ function doGet(e) {
         });
       }
 
-      var rawJson = syncSheet.getRange("A1").getValue();
-      if (!rawJson) {
-        return respondJson({
-          status: "empty",
-          message: "Database kosong.",
-          spreadsheetUrl: spreadsheetUrl
-        });
-      }
-
-      var payload = JSON.parse(rawJson);
       return respondJson({
         status: "success",
         payload: payload,
@@ -681,34 +722,19 @@ function doPost(e) {
 
     if (action === "push" && data.payload) {
       var incomingPayload = data.payload;
+      var incomingCurrent = data.currentRecord || null;
 
-      // 1. Dapatkan Sheet 'Database_Sync'
-      var syncSheet = ss.getSheetByName("Database_Sync");
-      if (!syncSheet) {
-        syncSheet = ss.insertSheet("Database_Sync");
-        syncSheet.hideSheet();
-      }
+      // 1. Baca data yang sudah tersimpan sebelumnya di Spreadsheet
+      var existingPayload = readDatabaseFromSheet(ss);
 
-      // 2. Baca data yang sudah ada sebelumnya (Server-Side Smart Merge)
-      var existingRaw = syncSheet.getRange("A1").getValue();
-      var existingPayload = null;
-      if (existingRaw) {
-        try {
-          existingPayload = JSON.parse(existingRaw);
-        } catch (eParse) {}
-      }
+      // 2. Gabungkan data masuk dengan data yang ada di Spreadsheet
+      //    PERLINDUNGAN UTAMA: Jangan pernah menghapus data guru yang sudah terisi di Spreadsheet!
+      var finalPayload = mergeAndProtectDatabase(existingPayload, incomingPayload, incomingCurrent);
 
-      // Gabungkan data masuk dengan data lama agar tidak menghapus hasil isian device lain
-      var finalPayload = incomingPayload;
-      if (!data.forceClean && action !== "replace" && existingPayload && existingPayload.records) {
-        finalPayload = serverMergePayloads(existingPayload, incomingPayload);
-      }
+      // 3. Simpan data secara row-based di sheet 'Database_Sync' (Bebas limit 50.000 karakter)
+      saveDatabaseToSheet(ss, finalPayload);
 
-      // 3. Simpan data gabungan ke Sheet 'Database_Sync'
-      syncSheet.getRange("A1").setValue(JSON.stringify(finalPayload));
-      syncSheet.getRange("A2").setValue(new Date().toISOString());
-
-      // 4. Perbarui Sheet 'Rekap_Supervisi' (Tabel Ringkasan)
+      // 4. Perbarui Sheet 'Rekap_Supervisi' (Tabel Ringkasan 72 Guru)
       updateRekapSheet(ss, finalPayload);
 
       // 5. Perbarui Sheet 'Rincian_19_Indikator'
@@ -716,7 +742,7 @@ function doPost(e) {
 
       return respondJson({
         status: "success",
-        message: "Data supervisi berhasil disimpan & digabungkan ke Spreadsheet (Anti-Hapus aktif).",
+        message: "Data supervisi berhasil disimpan & diperbarui di Google Spreadsheet.",
         spreadsheetUrl: spreadsheetUrl,
         payload: finalPayload,
         timestamp: new Date().toISOString()
@@ -730,31 +756,162 @@ function doPost(e) {
 }
 
 /**
- * Server-Side Smart Merge: Menggabungkan data tanpa menghapus nilai yang sudah ada
+ * Membaca seluruh data dari sheet 'Database_Sync'
+ * Mendukung format baris (row-based) dan auto-migrasi format lama di sel A1
  */
-function serverMergePayloads(existing, incoming) {
-  if (!existing) return incoming;
-  if (!incoming) return existing;
+function readDatabaseFromSheet(ss) {
+  var syncSheet = ss.getSheetByName("Database_Sync");
+  if (!syncSheet) return null;
 
-  // 1. Gabungkan daftar guru (Union) tanpa data dummy (GURU 1..N)
-  function isDummyT(name) {
-    if (!name) return false;
-    var str = String(name).trim().toUpperCase();
-    return /^GURU[\s\-_]*\d+/i.test(str) || /^GURU\s+[IVXLCDM]+/i.test(str) || str === "GURU" || str === "DUMMY";
+  var lastRow = syncSheet.getLastRow();
+  if (lastRow < 1) return null;
+
+  // Cek apakah masih format lama (JSON string tunggal di A1)
+  var cellA1 = syncSheet.getRange("A1").getValue();
+  if (typeof cellA1 === "string" && cellA1.trim().charAt(0) === "{") {
+    try {
+      return JSON.parse(cellA1);
+    } catch (eParse) {}
   }
 
+  // Format Baru: Row-Based
+  if (lastRow < 2) return null;
+
+  var values = syncSheet.getRange(1, 1, lastRow, 6).getValues();
+  var schoolMeta = {};
+  var teachers = [];
+  var records = {};
+  var index = {};
+
+  for (var i = 1; i < values.length; i++) {
+    var key = values[i][0];
+    var teacherName = values[i][1];
+    var jsonStr = values[i][2];
+
+    if (!key || !jsonStr) continue;
+
+    try {
+      var parsed = JSON.parse(jsonStr);
+      if (key === "_META_") {
+        schoolMeta = parsed;
+      } else {
+        var slug = String(key).trim();
+        var upperName = String(teacherName).trim().toUpperCase();
+        if (upperName && !isDummyName(upperName)) {
+          teachers.push(upperName);
+          records[slug] = parsed;
+
+          var evalCheck = isRecordHasData(parsed);
+          var totalScore = calculateTotalScore(parsed);
+          if (evalCheck || totalScore > 0) {
+            var pct = totalScore > 0 ? (totalScore / 76) * 100 : 0;
+            var predLabel = getPredikatLabel(pct);
+            index[slug] = {
+              name: upperName,
+              nip: parsed.nip || "",
+              mapel: parsed.mapel || "",
+              driveUrl: parsed.driveUrl || "",
+              total: totalScore > 0 ? totalScore : null,
+              percentage: totalScore > 0 ? pct : null,
+              predikatLabel: predLabel,
+              updatedAt: parsed.updatedAt || new Date().toISOString()
+            };
+          }
+        }
+      }
+    } catch (eRow) {}
+  }
+
+  return {
+    version: "2.6",
+    updatedAt: new Date().toISOString(),
+    schoolMeta: schoolMeta,
+    teachers: teachers,
+    index: index,
+    records: records
+  };
+}
+
+/**
+ * Menyimpan database ke sheet 'Database_Sync' per baris
+ * Setiap guru disimpan di 1 baris, aman dari batasan 50.000 karakter per sel!
+ */
+function saveDatabaseToSheet(ss, payload) {
+  var syncSheet = ss.getSheetByName("Database_Sync");
+  if (!syncSheet) {
+    syncSheet = ss.insertSheet("Database_Sync");
+  }
+  syncSheet.clear();
+
+  var rows = [
+    ["Key", "Nama Guru", "JSON_Data", "UpdatedAt", "TotalSkor", "IsEvaluated"]
+  ];
+
+  // Baris Metadata Sekolah
+  var meta = payload.schoolMeta || {};
+  rows.push([
+    "_META_",
+    "Metadata Sekolah",
+    JSON.stringify(meta),
+    payload.updatedAt || new Date().toISOString(),
+    0,
+    0
+  ]);
+
+  // Baris per guru
+  var teachers = payload.teachers || [];
+  var records = payload.records || {};
+  var index = payload.index || {};
+
+  for (var i = 0; i < teachers.length; i++) {
+    var teacher = teachers[i];
+    var slug = teacher.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    var rec = records[slug] || { name: teacher, scores: {} };
+    var hasData = isRecordHasData(rec);
+    var total = calculateTotalScore(rec);
+
+    rows.push([
+      slug,
+      teacher,
+      JSON.stringify(rec),
+      rec.updatedAt || new Date().toISOString(),
+      total,
+      hasData ? 1 : 0
+    ]);
+  }
+
+  if (rows.length > 0) {
+    syncSheet.getRange(1, 1, rows.length, 6).setValues(rows);
+  }
+}
+
+/**
+ * Menggabungkan data masuk dengan data Spreadsheet:
+ * ATURAN PERLINDUNGAN:
+ * 1. Jika guru X di Spreadsheet sudah dinilai, dan data masuk untuk guru X kosong -> PERTAHANKAN DATA SPREADSHEET!
+ * 2. Jika incomingCurrent (guru yang baru saja disimpan) ada -> update guru tersebut dengan data terbaru!
+ * 3. Jika kedua pihak memiliki data -> merge skor indikator 1-19 dan update field terbaru.
+ */
+function mergeAndProtectDatabase(existing, incoming, incomingCurrent) {
+  if (!existing || !existing.records) return incoming;
+  if (!incoming) return existing;
+
+  var existTeachers = existing.teachers || [];
+  var incTeachers = incoming.teachers || [];
   var teacherMap = {};
   var mergedTeachers = [];
-  var allTeachers = (existing.teachers || []).concat(incoming.teachers || []);
-  for (var i = 0; i < allTeachers.length; i++) {
-    var t = String(allTeachers[i]).trim().toUpperCase();
-    if (t && !isDummyT(t) && !teacherMap[t]) {
-      teacherMap[t] = true;
-      mergedTeachers.push(t);
+
+  // Gabungkan daftar guru
+  var allTeachers = existTeachers.concat(incTeachers);
+  for (var t = 0; t < allTeachers.length; t++) {
+    var nameUpper = String(allTeachers[t]).trim().toUpperCase();
+    if (nameUpper && !isDummyName(nameUpper) && !teacherMap[nameUpper]) {
+      teacherMap[nameUpper] = true;
+      mergedTeachers.push(nameUpper);
     }
   }
 
-  // 2. Gabungkan profil sekolah
+  // Gabungkan profil sekolah (prioritaskan yang terisi)
   var existMeta = existing.schoolMeta || {};
   var incMeta = incoming.schoolMeta || {};
   var mergedMeta = {
@@ -769,55 +926,149 @@ function serverMergePayloads(existing, incoming) {
     logoUrl: incMeta.logoUrl || existMeta.logoUrl || "/logo new.jpg"
   };
 
-  // 3. Gabungkan Records per guru
   var existRecords = existing.records || {};
   var incRecords = incoming.records || {};
   var existIndex = existing.index || {};
   var incIndex = incoming.index || {};
+
+  var currentSlug = incomingCurrent && incomingCurrent.name 
+    ? incomingCurrent.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
+    : null;
 
   var mergedRecords = {};
   var mergedIndex = {};
 
   for (var j = 0; j < mergedTeachers.length; j++) {
     var teacherName = mergedTeachers[j];
-    var slug = teacherName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    var slug = teacherName.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
     var recE = existRecords[slug];
     var recI = incRecords[slug];
 
+    // Jika guru ini adalah yang baru saja disimpan eksplisit oleh user
+    if (currentSlug && slug === currentSlug && incomingCurrent) {
+      mergedRecords[slug] = incomingCurrent;
+      var totalCurrent = calculateTotalScore(incomingCurrent);
+      var pctCurrent = totalCurrent > 0 ? (totalCurrent / 76) * 100 : 0;
+      mergedIndex[slug] = {
+        name: teacherName,
+        nip: incomingCurrent.nip || "",
+        mapel: incomingCurrent.mapel || "",
+        driveUrl: incomingCurrent.driveUrl || "",
+        total: totalCurrent > 0 ? totalCurrent : null,
+        percentage: totalCurrent > 0 ? pctCurrent : null,
+        predikatLabel: getPredikatLabel(pctCurrent),
+        updatedAt: incomingCurrent.updatedAt || new Date().toISOString()
+      };
+      continue;
+    }
+
     var evalE = isRecordHasData(recE);
     var evalI = isRecordHasData(recI);
 
-    var winner = null;
-    if (evalI && !evalE) {
-      winner = recI;
-    } else if (evalE && !evalI) {
-      winner = recE;
-    } else if (evalE && evalI) {
+    // KASUS 1: Di Spreadsheet SUDAH TERISI, tetapi di device masuk KOSONG
+    // PERLINDUNGAN: Pertahankan data Spreadsheet! Jangan pernah menghapus data terisi!
+    if (evalE && !evalI) {
+      mergedRecords[slug] = recE;
+      if (existIndex[slug]) {
+        mergedIndex[slug] = existIndex[slug];
+      } else {
+        var totE = calculateTotalScore(recE);
+        var pctE = totE > 0 ? (totE / 76) * 100 : 0;
+        mergedIndex[slug] = {
+          name: teacherName,
+          nip: recE.nip || "",
+          mapel: recE.mapel || "",
+          driveUrl: recE.driveUrl || "",
+          total: totE > 0 ? totE : null,
+          percentage: totE > 0 ? pctE : null,
+          predikatLabel: getPredikatLabel(pctE),
+          updatedAt: recE.updatedAt || new Date().toISOString()
+        };
+      }
+      continue;
+    }
+
+    // KASUS 2: Di Spreadsheet kosong, tetapi di device masuk ada data baru
+    if (!evalE && evalI) {
+      mergedRecords[slug] = recI;
+      if (incIndex[slug]) {
+        mergedIndex[slug] = incIndex[slug];
+      } else {
+        var totI = calculateTotalScore(recI);
+        var pctI = totI > 0 ? (totI / 76) * 100 : 0;
+        mergedIndex[slug] = {
+          name: teacherName,
+          nip: recI.nip || "",
+          mapel: recI.mapel || "",
+          driveUrl: recI.driveUrl || "",
+          total: totI > 0 ? totI : null,
+          percentage: totI > 0 ? pctI : null,
+          predikatLabel: getPredikatLabel(pctI),
+          updatedAt: recI.updatedAt || new Date().toISOString()
+        };
+      }
+      continue;
+    }
+
+    // KASUS 3: Kedua belah pihak ada data supervisi -> Gabungkan secara cerdas
+    if (evalE && evalI) {
       var timeE = recE.updatedAt ? new Date(recE.updatedAt).getTime() : 0;
       var timeI = recI.updatedAt ? new Date(recI.updatedAt).getTime() : 0;
-      winner = timeI >= timeE ? recI : recE;
+      var winner = timeI >= timeE ? recI : recE;
       var loser = timeI >= timeE ? recE : recI;
 
-      // Lengkapi field jika di pemenang kosong tapi di data lain ada
-      if (!winner.driveUrl && loser.driveUrl) winner.driveUrl = loser.driveUrl;
-      if (!winner.nip && loser.nip) winner.nip = loser.nip;
-      if (!winner.mapel && loser.mapel) winner.mapel = loser.mapel;
-      if (!winner.catatan && loser.catatan) winner.catatan = loser.catatan;
-      if (!winner.tindakLanjut && loser.tindakLanjut) winner.tindakLanjut = loser.tindakLanjut;
-    } else {
-      winner = recI || recE || { name: teacherName, scores: {} };
+      var mergedScores = {};
+      var sk;
+      if (loser.scores) {
+        for (sk in loser.scores) {
+          if (loser.scores[sk] !== null && loser.scores[sk] !== undefined) {
+            mergedScores[sk] = loser.scores[sk];
+          }
+        }
+      }
+      if (winner.scores) {
+        for (sk in winner.scores) {
+          if (winner.scores[sk] !== null && winner.scores[sk] !== undefined) {
+            mergedScores[sk] = winner.scores[sk];
+          }
+        }
+      }
+
+      var combinedRec = {
+        name: teacherName,
+        nip: winner.nip || loser.nip || "",
+        mapel: winner.mapel || loser.mapel || "",
+        kelas: winner.kelas || loser.kelas || "",
+        jtm: winner.jtm || loser.jtm || "",
+        tugasTambahan: winner.tugasTambahan || loser.tugasTambahan || "",
+        driveUrl: winner.driveUrl || loser.driveUrl || "",
+        catatan: winner.catatan || loser.catatan || "",
+        tindakLanjut: winner.tindakLanjut || loser.tindakLanjut || "",
+        namaSupervisor: winner.namaSupervisor || loser.namaSupervisor || "",
+        tanggal: winner.tanggal || loser.tanggal || "",
+        scores: mergedScores,
+        updatedAt: new Date(Math.max(timeE, timeI, Date.now())).toISOString()
+      };
+
+      mergedRecords[slug] = combinedRec;
+      var totComb = calculateTotalScore(combinedRec);
+      var pctComb = totComb > 0 ? (totComb / 76) * 100 : 0;
+      mergedIndex[slug] = {
+        name: teacherName,
+        nip: combinedRec.nip || "",
+        mapel: combinedRec.mapel || "",
+        driveUrl: combinedRec.driveUrl || "",
+        total: totComb > 0 ? totComb : null,
+        percentage: totComb > 0 ? pctComb : null,
+        predikatLabel: getPredikatLabel(pctComb),
+        updatedAt: combinedRec.updatedAt
+      };
+      continue;
     }
 
-    mergedRecords[slug] = winner;
-
-    if (evalI && incIndex[slug]) {
-      mergedIndex[slug] = incIndex[slug];
-    } else if (evalE && existIndex[slug]) {
-      mergedIndex[slug] = existIndex[slug];
-    } else if (winner && isRecordHasData(winner)) {
-      mergedIndex[slug] = incIndex[slug] || existIndex[slug];
-    }
+    // KASUS 4: Keduanya belum dievaluasi
+    mergedRecords[slug] = recI || recE || { name: teacherName, scores: {} };
   }
 
   return {
@@ -830,16 +1081,45 @@ function serverMergePayloads(existing, incoming) {
   };
 }
 
+function calculateTotalScore(rec) {
+  if (!rec || !rec.scores) return 0;
+  var sum = 0;
+  for (var k in rec.scores) {
+    var val = Number(rec.scores[k]);
+    if (!isNaN(val) && val > 0) sum += val;
+  }
+  return sum;
+}
+
+function getPredikatLabel(pct) {
+  if (pct >= 91) return "Amat Baik";
+  if (pct >= 81) return "Baik";
+  if (pct >= 71) return "Cukup";
+  if (pct > 0) return "Kurang";
+  return "Belum Disupervisi";
+}
+
 function isRecordHasData(rec) {
   if (!rec) return false;
   if (rec.scores) {
     for (var k in rec.scores) {
-      if (rec.scores[k] !== null && rec.scores[k] !== undefined) return true;
+      if (rec.scores[k] !== null && rec.scores[k] !== undefined && Number(rec.scores[k]) > 0) {
+        return true;
+      }
     }
   }
   if (rec.driveUrl && String(rec.driveUrl).trim() !== "") return true;
   if (rec.catatan && String(rec.catatan).trim() !== "") return true;
   if (rec.tindakLanjut && String(rec.tindakLanjut).trim() !== "") return true;
+  return false;
+}
+
+function isDummyName(str) {
+  if (!str) return false;
+  var upper = String(str).trim().toUpperCase();
+  if (upper === "GURU" || upper === "DUMMY" || upper === "SAMPLE" || upper === "GURU BARU") return true;
+  if (/^GURU[\s_-]*\d+/i.test(upper)) return true;
+  if (/^GURU\s+[IVXLCDM]+/i.test(upper)) return true;
   return false;
 }
 
@@ -850,13 +1130,13 @@ function updateRekapSheet(ss, payload) {
   }
   sheet.clear();
 
-  // Header Sekolah
+  // Header Identitas Sekolah
   var meta = payload.schoolMeta || {};
   sheet.getRange("A1:G1").merge().setValue("REKAPITULASI SUPERVISI ADMINISTRASI GURU").setFontWeight("bold").setFontSize(14);
   sheet.getRange("A2:G2").merge().setValue("Satuan Pendidikan: " + (meta.sekolah || "SMKN 2 Gorontalo") + " | Semester " + (meta.semester || "Ganjil") + " T.P. " + (meta.tahun || "2026/2027")).setFontSize(11);
   sheet.getRange("A3:G3").merge().setValue("Terakhir Diperbarui: " + new Date().toLocaleString("id-ID")).setFontStyle("italic").setFontSize(9);
 
-  // Header Tabel
+  // Header Kolom Tabel
   var headers = [
     "No", "Nama Guru", "NIP", "Mata Pelajaran", "Kelas", "JTM", "Tugas Tambahan", "Link Soft Copy Drive",
     "Total Skor", "Skor Maks", "Persentase (%)", "Predikat", "Status", "Supervisor", "Tanggal", "Catatan", "Tindak Lanjut"
@@ -879,9 +1159,9 @@ function updateRekapSheet(ss, payload) {
     var entry = index[slug];
     var rec = records[slug] || {};
 
-    var hasEntry = entry && entry.total !== null && entry.total !== undefined;
+    var hasEntry = entry && entry.total !== null && entry.total !== undefined && entry.total > 0;
     var total = hasEntry ? entry.total : "";
-    var pct = hasEntry && entry.percentage !== null ? entry.percentage.toFixed(1) + "%" : "";
+    var pct = hasEntry && entry.percentage !== null ? Number(entry.percentage).toFixed(1) + "%" : "";
     var pred = hasEntry ? entry.predikatLabel : "Belum Disupervisi";
     var status = hasEntry ? "Selesai" : "Menunggu";
 
@@ -954,9 +1234,9 @@ function updateDetailSheet(ss, payload) {
 
     for (var ind = 1; ind <= 19; ind++) {
       var s = scores[ind];
-      if (s !== null && s !== undefined) {
-        row.push(s);
-        sum += s;
+      if (s !== null && s !== undefined && Number(s) > 0) {
+        row.push(Number(s));
+        sum += Number(s);
         filled++;
       } else {
         row.push("-");
@@ -964,7 +1244,7 @@ function updateDetailSheet(ss, payload) {
     }
 
     var pct = filled > 0 ? ((sum / 76) * 100).toFixed(1) + "%" : "-";
-    var pred = entry ? entry.predikatLabel : "-";
+    var pred = entry ? entry.predikatLabel : (filled > 0 ? getPredikatLabel((sum / 76) * 100) : "-");
 
     row.push(filled > 0 ? sum : "-");
     row.push(pct);

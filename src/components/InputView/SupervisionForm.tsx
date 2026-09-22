@@ -66,19 +66,27 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isDraftSaved, setIsDraftSaved] = useState(false);
 
-  // Tracks the active teacher to ensure user inputs are NEVER wiped by re-renders or background syncs
+  // Tracks active teacher and timestamp to ensure form updates when other devices edit
   const currentTeacherRef = useRef<string>(initialRecord.name);
+  const lastUpdatedAtRef = useRef<string>(initialRecord.updatedAt || "");
 
-  // Sync state ONLY when the selected teacher actually changes
+  // Sync state when selected teacher changes OR incoming initialRecord has newer timestamp from cloud sync
   useEffect(() => {
-    if (initialRecord.name !== currentTeacherRef.current) {
+    const isTeacherChanged = initialRecord.name !== currentTeacherRef.current;
+    const isCloudUpdate = initialRecord.updatedAt && initialRecord.updatedAt !== lastUpdatedAtRef.current;
+
+    if (isTeacherChanged) {
       currentTeacherRef.current = initialRecord.name;
+      lastUpdatedAtRef.current = initialRecord.updatedAt || "";
       setRecord(initialRecord);
       setSavedSuccess(false);
       setSaveMessage(null);
       setIsDraftSaved(false);
+    } else if (isCloudUpdate && !isSaving) {
+      lastUpdatedAtRef.current = initialRecord.updatedAt || "";
+      setRecord(initialRecord);
     }
-  }, [initialRecord.name]);
+  }, [initialRecord.name, initialRecord.updatedAt, isSaving]);
 
   // Real-time Local Auto-Save (Drafting):
   // Menjaga agar saat guru/supervisor mengetik atau memilih nilai, data tersimpan langsung di perangkat lokal (Anti-Hilang)
@@ -158,14 +166,23 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
     setSaveMessage(null);
 
     try {
-      // 1. Simpan langsung ke memori lokal browser
-      saveTeacherRecord(record);
+      const nowIso = new Date().toISOString();
+      const upperRecord: SupervisionRecord = {
+        ...record,
+        name: record.name.trim().toUpperCase(),
+        updatedAt: nowIso
+      };
+
+      // 1. Simpan langsung ke memori lokal browser seketika
+      lastUpdatedAtRef.current = nowIso;
+      setRecord(upperRecord);
+      saveTeacherRecord(upperRecord);
       setSavedSuccess(true);
 
       // 2. Kirim ke Google Spreadsheet (Push)
-      const res = await onSave(record);
+      const res = await onSave(upperRecord);
       if (res && res.cloudSuccess) {
-        setSaveMessage("Tersimpan di perangkat dan terkirim ke Google Spreadsheet!");
+        setSaveMessage("Tersimpan di Google Spreadsheet & memori perangkat!");
       } else if (res && res.message) {
         setSaveMessage(res.message);
       } else {
@@ -178,7 +195,7 @@ export const SupervisionForm: React.FC<SupervisionFormProps> = ({
       setIsSaving(false);
       setTimeout(() => {
         setSavedSuccess(false);
-      }, 4000);
+      }, 5000);
     }
   };
 
